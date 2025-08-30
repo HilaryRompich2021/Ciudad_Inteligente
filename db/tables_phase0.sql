@@ -1,0 +1,1 @@
+-- TODO: crear tablas events_raw y alerts en el schema del equipo
