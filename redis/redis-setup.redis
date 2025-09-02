@@ -1,0 +1,13 @@
+SADD blacklist:plates "P123ABC" "P456DEF" "P789GHI"
+
+HSET policy:speed:zona1 limit 60 margin 10
+HSET policy:speed:zona2 limit 50 margin 5
+HSET policy:speed:zona3 limit 40 margin 5
+
+SET events:zona1:overspeed 0
+SET events:zona2:overspeed 0
+SET events:zona3:overspeed 0
+
+DEL alerts:active
+LPUSH alerts:active "P999XYZ - zona2 - overspeed"
+LPUSH alerts:active "P123ABC - zona1 - overspeed"
