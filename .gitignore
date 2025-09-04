@@ -1,0 +1,29 @@
+# Personal technical documentation (not for public repo)
+INGESTOR_TECHNICAL_GUIDE.md
+arquitectura.png
+mops/Guia.md
+scripts/scripts.png 
+scripts/topics.png
+
+# Build artifacts
+target/
+*.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+# IDE files
+.idea/
+*.iws
+*.iml
+*.ipr
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Docker volumes (if any)
+docker-volumes/
