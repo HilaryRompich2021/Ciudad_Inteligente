@@ -282,13 +282,9 @@ docker-compose up --build -d ingestor
 ---
 
 ## 📚 Referencias técnicas
-
-- **Guía oficial del proyecto**: `mops/Guia.md`
 - **JSON Schema oficial**: `src/ingestor/src/main/resources/canonical-event-schema.json`
 - **Docker Compose**: `platform/docker-compose.yml`
 - **Spring Kafka**: https://spring.io/projects/spring-kafka
-- **JSON Schema Validator**: https://github.com/networknt/json-schema-validator
-
 ---
 
 **✅ Estado**: Fase 1 completamente implementada y funcional  
