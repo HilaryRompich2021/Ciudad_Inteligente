@@ -6,6 +6,7 @@ scripts/scripts.png
 scripts/topics.png
 GUÍA_PRUEBAS_FASE1.md
 GUÍA_GIT_WORKFLOW.md
+guias/*
 
 # Build artifacts
 target/

@@ -56,42 +56,317 @@ Los topics se crean **automáticamente** al iniciar el microservicio:
 - 🚨 `t01.correlated.alerts`: Alertas correlacionadas (para Fase 2)
 
 ### 3. **Recepción y validación de eventos**
-**Endpoint principal**: `POST http://localhost:8080/events`
 
-#### **Ejemplo de evento canónico válido:**
+El microservicio ingestor expone **4 endpoints principales**:
+
+#### **📋 Endpoints disponibles:**
+- 🟢 `POST /events` - Procesar un evento individual
+- 🟢 `POST /events/bulk` - Procesar múltiples eventos en lote
+- 🟢 `GET /health` - Estado del servicio y conectividad
+- 🟢 `GET /schema` - Obtener el esquema canónico JSON
+
+---
+
+## 📝 **Campos del Evento Canónico**
+
+### **✅ Campos OBLIGATORIOS** (según esquema JSON):
+- `event_version` *(string)*: Siempre "1.0"
+- `event_type` *(enum)*: panic.button | sensor.lpr | sensor.speed | sensor.acoustic | citizen.report
+- `event_id` *(string)*: Identificador único del evento
+- `producer` *(string)*: Sistema que genera el evento
+- `source` *(enum)*: Solo "simulated" por ahora
+- `timestamp` *(datetime)*: ISO 8601 (se genera automáticamente si no se envía)
+- `partition_key` *(string)*: Clave para particionado de Kafka
+- `geo` *(object)*: **Todos los campos son obligatorios** (`zone`, `lat`, `lon`)
+  - `zone` *(string)*: Identificador de zona (ej: "downtown", "north", "highway-101")
+  - `lat` *(number)*: Latitud (-90 a 90)
+  - `lon` *(number)*: Longitud (-180 a 180)
+- `severity` *(enum)*: info | warning | critical
+- `payload` *(object)*: Datos específicos del evento (estructura libre)
+  - **Nota**: Actualmente acepta cualquier estructura JSON válida
+  - **Próxima mejora**: Validaciones específicas por tipo de evento (ver sección "Mejoras futuras")
+
+### **⚪ Campos OPCIONALES** (se generan automáticamente si no se envían):
+- `correlation_id` *(string)*: UUID para correlación de eventos
+- `trace_id` *(string)*: UUID para trazabilidad
+
+---
+
+## 🔮 **Mejoras futuras planeadas**
+
+### **Validaciones específicas de payload por tipo de evento:**
+
+Estas validaciones están planificadas para implementarse después de completar el correlador:
+
+#### **🚨 panic.button**
+```json
+"payload": {
+  "tipo_de_alerta": "panico | emergencia | incendio",  // enum obligatorio
+  "user_context": "movil | quiosco | web",             // enum obligatorio
+  "device_id": "string",                               // opcional
+  "battery_level": "number (0-100)"                    // opcional
+}
+```
+
+#### **🚗 sensor.lpr**
+```json
+"payload": {
+  "placa_vehicular": "string (formato específico)",    // obligatorio
+  "ubicacion_sensor": "string",                        // obligatorio
+  "confidence": "number (0-1)",                        // opcional
+  "vehicle_type": "sedan | truck | motorcycle | ..."  // opcional
+}
+```
+
+#### **🏃 sensor.speed**
+```json
+"payload": {
+  "velocidad_detectada": "number (> 0)",               // obligatorio
+  "direccion": "NORTE | SUR | ESTE | OESTE",          // enum obligatorio
+  "speed_limit": "number",                             // opcional
+  "vehicle_type": "string"                             // opcional
+}
+```
+
+#### **🔊 sensor.acoustic**
+```json
+"payload": {
+  "tipo_sonido_detectado": "disparo | explosion | vidrio_roto | normal", // enum obligatorio
+  "probabilidad_evento_critico": "number (0-1)",      // obligatorio
+  "decibel_level": "number",                           // opcional
+  "duration_ms": "number"                              // opcional
+}
+```
+
+#### **👤 citizen.report**
+```json
+"payload": {
+  "tipo_evento": "accidente | incendio | altercado | vandalismo", // enum obligatorio
+  "origen": "usuario | app | punto_fisico",           // enum obligatorio
+  "description": "string",                             // opcional
+  "citizen_id": "string",                              // opcional
+  "attachments": "array"                               // opcional
+}
+```
+
+### **Beneficios de implementar estas validaciones:**
+- ✅ **Datos más consistentes**: Garantiza que cada tipo de evento tenga la estructura esperada
+- ✅ **Mejor correlación**: El correlador puede confiar en la estructura específica de cada payload
+- ✅ **Detección temprana de errores**: Errores de estructura se detectan en el ingestor, no en el correlador
+- ✅ **API más robusta**: Clientes reciben retroalimentación específica sobre errores en el payload
+
+---
+
+## 🧪 **Ejemplos de uso de endpoints**
+
+### **1. POST /events - Evento individual con TODOS los campos**
+
+```bash
+curl -X POST http://localhost:8080/events \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event_version": "1.0",
+    "event_type": "panic.button",
+    "event_id": "evt-2025-09-10-001",
+    "producer": "mobile-app",
+    "source": "simulated",
+    "correlation_id": "corr-2025-09-10-001",
+    "trace_id": "trace-2025-09-10-001",
+    "timestamp": "2025-09-10T15:30:00Z",
+    "partition_key": "zone-downtown",
+    "geo": {
+      "zone": "downtown",
+      "lat": 19.4326,
+      "lon": -99.1332
+    },
+    "severity": "critical",
+    "payload": {
+      "device_id": "panic-btn-001",
+      "user_id": "citizen-1234",
+      "battery_level": 85
+    }
+  }
+```
+
+### **2. POST /events - Evento con AUTOCOMPLETADO (campos mínimos)**
+
+```bash
+curl -X POST http://localhost:8080/events \
+  -H "Content-Type: application/json" \
+  -d '{
+    "event_version": "1.0",
+    "event_type": "sensor.lpr",
+    "event_id": "evt-2025-09-10-002",
+    "producer": "camera-system",
+    "source": "simulated",
+    "partition_key": "zone-north",
+    "geo": {
+      "zone": "north",
+      "lat": 19.4500,
+      "lon": -99.1300
+    },
+    "severity": "info",
+    "payload": {
+      "plate_number": "ABC123",
+      "confidence": 0.98
+    }
+  }'
+```
+> **⚡ El microservicio automáticamente genera:** `timestamp`, `correlation_id`, `trace_id`
+
+## 📍 **Coordenadas de referencia por zona:**
+
+Para facilitar las pruebas, aquí tienes coordenadas de ejemplo para diferentes zonas:
+
+- **downtown**: `lat: 19.4326, lon: -99.1332` (Centro histórico)
+- **north**: `lat: 19.4500, lon: -99.1300` (Zona Norte)
+- **south**: `lat: 19.4100, lon: -99.1400` (Zona Sur)
+- **east**: `lat: 19.4300, lon: -99.1200` (Zona Este)
+- **west**: `lat: 19.4300, lon: -99.1500` (Zona Oeste)
+- **highway-101**: `lat: 19.3852, lon: -99.1781` (Carretera principal)
+- **zone-test**: `lat: 19.4200, lon: -99.1350` (Zona de pruebas)
+
+### **3. POST /events/bulk - Múltiples eventos con AUTOCOMPLETADO**
+
+```bash
+curl -X POST http://localhost:8080/events/bulk \
+  -H "Content-Type: application/json" \
+  -d '[
+    {
+      "event_version": "1.0",
+      "event_type": "sensor.speed",
+      "event_id": "evt-2025-09-10-003",
+      "producer": "speed-sensor",
+      "source": "simulated",
+      "partition_key": "highway-101",
+      "geo": {
+        "zone": "highway-101",
+        "lat": 19.3852,
+        "lon": -99.1781
+      },
+      "severity": "warning",
+      "payload": {
+        "speed": 135.5,
+        "speed_limit": 80,
+        "vehicle_type": "motorcycle"
+      }
+    },
+    {
+      "event_version": "1.0",
+      "event_type": "citizen.report",
+      "event_id": "evt-2025-09-10-004",
+      "producer": "citizen-app",
+      "source": "simulated",
+      "partition_key": "zone-south",
+      "geo": {
+        "zone": "south",
+        "lat": 19.4100,
+        "lon": -99.1400
+      },
+      "severity": "info",
+      "payload": {
+        "report_type": "graffiti",
+        "description": "Vandalism on public wall"
+      }
+    }
+  ]'
+```
+
+**💡 Respuesta de /events/bulk:**
 ```json
 {
-  "event_version": "1.0",
-  "event_type": "panic.button",
-  "event_id": "123e4567-e89b-12d3-a456-426614174000",
-  "producer": "artillery",
-  "source": "simulated",
-  "correlation_id": "123e4567-e89b-12d3-a456-426614174001",
-  "trace_id": "123e4567-e89b-12d3-a456-426614174002",
-  "timestamp": "2025-09-04T21:00:00Z",
-  "partition_key": "zone_4",
-  "geo": { "zone": "zone_4", "lat": 14.62, "lon": -90.52 },
-  "severity": "critical",
-  "payload": {
-    "tipo_de_alerta": "panico",
-    "identificador_dispositivo": "BTN-001",
-    "user_context": "movil"
+  "total": 2,
+  "successful": 2,
+  "failed": 0,
+  "successful_events": ["evt-2025-09-10-003", "evt-2025-09-10-004"],
+  "failed_events": [],
+  "timestamp": "2025-09-10T15:35:00Z"
+}
+```
+
+### **4. GET /health - Estado del servicio**
+
+```bash
+curl -X GET http://localhost:8080/health
+```
+
+**Respuesta esperada:**
+```json
+{
+  "status": "UP",
+  "kafka": "connected",
+  "validator": "ready",
+  "timestamp": "2025-09-10T15:30:45Z",
+  "service": "ingestor",
+  "version": "1.0",
+  "details": {
+    "topic": "t01.events.standardized",
+    "schema_version": "1.0"
   }
 }
 ```
 
-#### **Tipos de eventos soportados:**
-- `panic.button`: Botones de pánico
-- `sensor.lpr`: Cámaras de reconocimiento de placas
-- `sensor.speed`: Sensores de velocidad/movimiento  
-- `sensor.acoustic`: Sensores acústicos/ambientales
-- `citizen.report`: Reportes ciudadanos
+### **5. GET /schema - Esquema canónico**
+
+```bash
+curl -X GET http://localhost:8080/schema
+```
+
+Devuelve el esquema JSON completo usado para validación.
+
+---
+
+## 🚨 **Casos de error comunes**
+
+### **❌ Campo obligatorio faltante:**
+```json
+{
+  "event_version": "1.0",
+  "event_type": "panic.button"
+  // Faltan: event_id, producer, source, partition_key, geo, severity, payload
+}
+```
+**Respuesta:** `400 Bad Request` con detalles de validación
+
+### **❌ Tipo de evento inválido:**
+```json
+{
+  "event_type": "invalid.type"  // Solo se permiten los 5 tipos definidos
+}
+```
+
+### **❌ Geo sin zone (campo obligatorio):**
+```json
+{
+  "geo": {
+    "lat": 19.4326,
+    "lon": -99.1332
+    // Falta: "zone" (obligatorio)
+  }
+}
+```
+
+### **❌ JSON mal formado:**
+```json
+{
+  "event_id": "test"
+  "event_type": "panic.button"  // Falta coma
+}
+```
 
 ### 4. **Validación estricta y enriquecimiento**
 - ✅ **JSON Schema v1.0**: Validación contra esquema oficial del proyecto
-- ✅ **Campos obligatorios**: `event_version`, `event_type`, `event_id`, `producer`, `source`, `timestamp`, `partition_key`, `geo`, `severity`, `payload`
-- ✅ **Enriquecimiento automático**: Si faltan `timestamp`, `trace_id`, o `correlation_id`, se generan automáticamente
+- ✅ **Campos obligatorios**: `event_version`, `event_type`, `event_id`, `producer`, `source`, `timestamp`, `partition_key`, `geo` (con `zone`, `lat`, `lon`), `severity`, `payload`
+- ✅ **Enriquecimiento automático**: Si faltan `timestamp`, `trace_id`, o `correlation_id`, se generan automáticamente con UUID
 - ✅ **Snake_case mapping**: Mapeo automático entre JSON (snake_case) y Java (camelCase)
+- ✅ **Procesamiento en lote**: El endpoint `/events/bulk` procesa eventos independientemente (si uno falla, los demás continúan)
+
+#### **Tipos de eventos soportados:**
+- `panic.button`: Botones de pánico ciudadano
+- `sensor.lpr`: Cámaras de reconocimiento de placas
+- `sensor.speed`: Sensores de velocidad/movimiento  
+- `sensor.acoustic`: Sensores acústicos/ambientales
+- `citizen.report`: Reportes ciudadanos vía app móvil
 
 ### 5. **Publicación exitosa en Kafka**
 - 📨 **Topic**: `t01.events.standardized`
@@ -110,32 +385,71 @@ docker-compose up --build -d
 docker ps  # Verificar que todos los contenedores estén UP
 ```
 
-### **Paso 2: Enviar evento de prueba**
-**Método 1: Con Postman/Insomnia**
-- URL: `POST http://localhost:8080/events`
-- Headers: `Content-Type: application/json`
-- Body: JSON canónico (ver ejemplo arriba)
+### **Paso 2: Probar los endpoints**
 
-**Método 2: Con curl**
+#### **Opción A: Evento individual básico**
 ```bash
 curl -X POST http://localhost:8080/events \
   -H "Content-Type: application/json" \
   -d '{
     "event_version": "1.0",
     "event_type": "panic.button",
-    "event_id": "123e4567-e89b-12d3-a456-426614174000",
-    "producer": "artillery",
+    "event_id": "test-001",
+    "producer": "test-client",
     "source": "simulated",
-    "timestamp": "2025-09-04T21:00:00Z",
-    "partition_key": "zone_4",
-    "geo": { "zone": "zone_4", "lat": 14.62, "lon": -90.52 },
+    "partition_key": "zone-test",
+    "geo": { 
+      "zone": "downtown",
+      "lat": 19.4326,
+      "lon": -99.1332
+    },
     "severity": "critical",
-    "payload": {
-      "tipo_de_alerta": "panico",
-      "identificador_dispositivo": "BTN-001",
-      "user_context": "movil"
-    }
+    "payload": { "test": true }
   }'
+```
+
+#### **Opción B: Lote de eventos**
+```bash
+curl -X POST http://localhost:8080/events/bulk \
+  -H "Content-Type: application/json" \
+  -d '[
+    {
+      "event_version": "1.0",
+      "event_type": "panic.button",
+      "event_id": "bulk-001",
+      "producer": "test",
+      "source": "simulated",
+      "partition_key": "zone-1",
+      "geo": { 
+        "zone": "north",
+        "lat": 19.4500,
+        "lon": -99.1300
+      },
+      "severity": "critical",
+      "payload": { "device": "btn-001" }
+    },
+    {
+      "event_version": "1.0",
+      "event_type": "sensor.lpr",
+      "event_id": "bulk-002",
+      "producer": "test",
+      "source": "simulated",
+      "partition_key": "zone-2",
+      "geo": { 
+        "zone": "south",
+        "lat": 19.4100,
+        "lon": -99.1400
+      },
+      "severity": "info",
+      "payload": { "plate": "ABC123" }
+    }
+  ]'
+```
+
+#### **Opción C: Verificar estado del servicio**
+```bash
+curl -X GET http://localhost:8080/health
+curl -X GET http://localhost:8080/schema
 ```
 
 ### **Paso 3: Verificar en Kafka UI**
@@ -144,8 +458,9 @@ curl -X POST http://localhost:8080/events \
 - Verificar que el mensaje aparezca con la key `zone_4`
 
 ### **Respuestas esperadas:**
-- ✅ `202 Accepted`: Evento procesado y publicado exitosamente
-- ❌ `400 Bad Request`: Error de validación (JSON mal formado o campos faltantes)
+- ✅ `202 Accepted`: Evento(s) procesado(s) y publicado(s) exitosamente
+- ✅ `200 OK`: Para endpoints GET (/health, /schema)
+- ❌ `400 Bad Request`: Error de validación (JSON mal formado, campos faltantes o inválidos)
 - ❌ `500 Internal Server Error`: Error interno del microservicio
 
 ---
@@ -211,6 +526,14 @@ private String eventType;
   - Reglas inteligentes (ej: panic.button + velocidad alta = posible robo)
   - Cache en Redis para estado transitorio
   - Publicación de alertas en `t01.correlated.alerts`
+
+### **Fase 2.5: Validaciones específicas de payload (Mejora incremental)**
+- **Objetivo**: Agregar validación granular para cada tipo de evento
+- **Funcionalidad**:
+  - Esquemas JSON específicos para cada `event_type`
+  - Validación de enums y formatos específicos (placas, direcciones, etc.)
+  - Mensajes de error más específicos para desarrolladores
+  - Retrocompatibilidad con eventos existentes
 
 ### **Fase 3: Persistencia y ETL**
 - Guardar eventos y alertas en PostgreSQL para análisis histórico
@@ -292,3 +615,25 @@ docker-compose up --build -d ingestor
 **👥 Equipo**: Listo para demo y continuación del desarrollo
 
 **¡Listo para avanzar a la siguiente fase!**
+
+---
+
+## 🛡️ Validación de eventos: Individual vs Bulk
+
+### 1. Endpoint individual (`POST /events`)
+- **Validación automática:** Se usa `@Valid` en el controlador para verificar los campos mínimos obligatorios (por anotaciones como `@NotNull`).
+- **Validación de esquema:** Además, el evento se valida contra el esquema JSON canónico en el servicio antes de publicarse en Kafka.
+- **Errores personalizados:** Si la validación automática falla, un manejador global (`@ControllerAdvice`) devuelve una respuesta JSON detallada con los errores de validación.
+- **Enriquecimiento:** Si faltan campos opcionales (`timestamp`, `trace_id`, `correlation_id`), se generan automáticamente.
+
+### 2. Endpoint bulk (`POST /events/bulk`)
+- **Validación manual:** No se usa `@Valid` en el controlador. La validación se realiza manualmente en el servicio, evento por evento, usando el esquema JSON canónico.
+- **Procesamiento parcial:** Los eventos válidos se publican en Kafka; los inválidos se reportan en la respuesta con detalles (índice, eventId, mensaje de error).
+- **Respuesta estructurada:** La respuesta incluye el total de eventos, los exitosos, los fallidos y los errores específicos de cada evento.
+
+**Ventajas de este enfoque:**
+- Máxima robustez y calidad de datos.
+- Respuestas claras y personalizadas para el cliente.
+- Permite procesamiento parcial en lote y validación estricta en ambos casos.
+
+---
