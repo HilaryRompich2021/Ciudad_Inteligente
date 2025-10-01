@@ -1,5 +1,5 @@
-version: "3.8"
 
+version: "3.8"
 services:
   zookeeper:
     image: bitnami/zookeeper:3.8
@@ -16,9 +16,7 @@ services:
       - "9092:9092"
       - "29092:29092"
     environment:
-      # Conexión con Zookeeper
       - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
-      # Listeners internos (para contenedores) y externos (para tu host/ingestor)
       - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,PLAINTEXT_HOST://:29092
       - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,PLAINTEXT_HOST://host.docker.internal:29092
       - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
@@ -42,11 +40,38 @@ services:
   postgres:
     image: postgres:16
     environment:
+      - POSTGRES_DB=ciudades
       - POSTGRES_PASSWORD=postgres
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ../db:/docker-entrypoint-initdb.d
+
+  kafka-init:
+    image: bitnami/kafka:3.7
+    depends_on:
+      - kafka
+    volumes:
+      - ../scripts/create-topics.sh:/create-topics.sh
+    entrypoint: ["/bin/bash", "-c", "sleep 10 && bash /create-topics.sh"]
+
+  grafana:
+    image: grafana/grafana:latest
+    depends_on:
+      - postgres
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
 
 volumes:
   pgdata:
+  grafana-data:
+
+
