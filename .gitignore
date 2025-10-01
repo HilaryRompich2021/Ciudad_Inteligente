@@ -30,3 +30,10 @@ Thumbs.db
 
 # Docker volumes (if any)
 docker-volumes/
+
+# Docker Compose pruebas files (WSL+Docker CE only)
+docker-compose.pruebas.yml
+**/docker-compose.*.pruebas.yml
+
+# Grafana provisioning pruebas (WSL+Docker CE only)
+platform/grafana/provisioning-pruebas/
