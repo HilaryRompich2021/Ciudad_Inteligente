@@ -211,13 +211,12 @@ El **Ingestor** implementa un enriquecedor automático que completa campos opcio
 
 ### 5.2. Ejemplo: Evento Mínimo (Sin Campos Opcionales)
 
-Puedes enviar un evento **sin** `timestamp`, `trace_id` ni `correlation_id`:
+Puedes enviar un evento **sin** `timestamp`, `event_id`  `trace_id` ni `correlation_id`:
 
 ```json
 {
   "event_version": "1.0",
   "event_type": "panic.button",
-  "event_id": "f1e2d3c4-9999-4999-8999-000000009999",
   "producer": "test-minimal",
   "source": "simulated",
   "partition_key": "zone_test",
@@ -239,7 +238,7 @@ Puedes enviar un evento **sin** `timestamp`, `trace_id` ni `correlation_id`:
 {
   "event_version": "1.0",
   "event_type": "panic.button",
-  "event_id": "f1e2d3c4-9999-4999-8999-000000009999",
+  "event_id": "f1e2d3c4-9999-4999-8999-000000009999",  // ← Auto-generado
   "producer": "test-minimal",
   "source": "simulated",
   "timestamp": "2025-09-28T12:40:15.678Z",        // ← Auto-generado
@@ -267,7 +266,7 @@ Puedes enviar un evento **sin** `timestamp`, `trace_id` ni `correlation_id`:
 
 ### 5.4. ⚠️ Comportamiento Importante
 
-- Si **envías** `timestamp`, `trace_id` o `correlation_id`, el Ingestor **respetará** tus valores
+- Si **envías** `timestamp`, `event_id`, `trace_id` o `correlation_id`, el Ingestor **respetará** tus valores
 - Si **omites** estos campos, se generarán automáticamente
 - Los UUIDs auto-generados cumplen con el formato UUID v4
 
@@ -283,7 +282,7 @@ Puedes enviar un evento **sin** `timestamp`, `trace_id` ni `correlation_id`:
   ```bash
   docker logs -f ingestor
   ```
-- Use UUIDs v4 válidos para `event_id` (obligatorio)
+- Use UUIDs v4 válidos para `event_id` (se autogenera si falta)
 - Los demás campos opcionales (`timestamp`, `trace_id`, `correlation_id`) se auto-generan si faltan
 
 ### 🔍 Verificar Eventos Publicados

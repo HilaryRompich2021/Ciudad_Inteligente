@@ -6,12 +6,12 @@ El **Correlator** es un microservicio Spring Boot que consume eventos estandariz
 
 ### Funcionalidades Principales
 
-- **Consumo de eventos** desde el topic `t01.events.standardized`
+- **Consumo de eventos** desde el topic `events.standardized`
 - **Correlación temporal** usando Redis (ventana de 5 minutos)
 - **Detección de patrones**:
   - `possible_robbery`: Combina eventos `panic.button` + `sensor.lpr`
   - `accident`: Combina eventos `traffic.camera` + `ambulance.request`
-- **Publicación de alertas** al topic `t01.correlated.alerts`
+- **Publicación de alertas** al topic `correlated.alerts`
 - **Persistencia** de alertas en PostgreSQL
 
 ---
@@ -19,12 +19,12 @@ El **Correlator** es un microservicio Spring Boot que consume eventos estandariz
 ## 🏗️ Arquitectura
 
 ```
-Kafka (t01.events.standardized)
+Kafka (events.standardized)
         ↓
     Correlator
         ↓ (correlación temporal con Redis)
         ↓
-Kafka (t01.correlated.alerts) + PostgreSQL
+Kafka (correlated.alerts) + PostgreSQL
 ```
 
 ### Tecnologías
@@ -64,8 +64,8 @@ Esto iniciará:
 Accede a Kafka UI: [http://localhost:8081](http://localhost:8081)
 
 Verifica que existan los topics:
-- `t01.events.standardized` (3 particiones)
-- `t01.correlated.alerts` (3 particiones)
+- `events.standardized` (3 particiones)
+- `correlated.alerts` (3 particiones)
 
 ---
 
@@ -259,7 +259,7 @@ docker ps | findstr correlator
 Deberías ver logs como:
 ```
 Started CorrelatorApplication in X seconds
-Subscribed to topic(s): t01.events.standardized
+Subscribed to topic(s): events.standardized
 ```
 
 ### Opción 2: Ejecución Local (Desarrollo)
@@ -360,7 +360,7 @@ curl -X POST http://localhost:8000/events \
 
 **Opción A: Kafka UI**
 1. Accede a [http://localhost:8081](http://localhost:8081)
-2. Navega a `Topics` → `t01.correlated.alerts`
+2. Navega a `Topics` → `correlated.alerts`
 3. Ve a la pestaña `Messages`
 4. Deberías ver la alerta generada
 

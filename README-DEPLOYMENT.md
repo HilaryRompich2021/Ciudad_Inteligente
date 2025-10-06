@@ -42,14 +42,14 @@ Sistema distribuido de supervisión perimetral para ciudades inteligentes que pr
 │  - Validación       │
 │  - Enriquecimiento  │
 └──────┬──────────────┘
-       │ Kafka: t01.events.standardized
+       │ Kafka: events.standardized
        ↓
 ┌─────────────────────┐
 │  Correlator         │ (Puerto 8080)
 │  - Redis Windowing  │
 │  - Pattern Matching │
 └──────┬──────────────┘
-       │ Kafka: t01.correlated.alerts
+       │ Kafka: correlated.alerts
        ↓
 ┌─────────────────────┐
 │  PostgreSQL         │ (Puerto 5432)
@@ -158,8 +158,8 @@ Deberías ver 6 contenedores:
 Accede a: **http://localhost:8081**
 
 Deberías ver:
-- `t01.events.standardized` (3 particiones)
-- `t01.correlated.alerts` (3 particiones)
+- `events.standardized` (3 particiones)
+- `correlated.alerts` (3 particiones)
 
 #### Verificar Base de Datos:
 
@@ -168,7 +168,7 @@ Deberías ver:
 docker exec -it postgres psql -U postgres -d ciudades -c "\dt"
 
 # WSL
-docker exec -it platform_postgres_1 psql -U postgres -d ciudades -c "\dt"
+docker exec -it platform-postgres-1 psql -U postgres -d ciudades -c "\dt"
 ```
 
 Deberías ver las tablas: `events` y `alerts`
@@ -302,7 +302,18 @@ curl -X POST http://localhost:8000/events \
   }'
 ```
 
-**Esperado:** Status `202 Accepted`
+**Esperado:** Status `202 Accepted` con respuesta JSON detallada:
+
+```json
+{
+  "status": "success",
+  "message": "Event processed and published successfully",
+  "event_id": "f1e2d3c4-0001-4001-8001-000000000001",
+  "event_type": "panic.button",
+  "partition_key": "zone_test",
+  "timestamp": "2025-10-05T14:30:15.123Z"
+}
+```
 
 ---
 
@@ -314,13 +325,16 @@ El **Event Ingestor** enriquece automáticamente los eventos con campos opcional
 
 | Campo | Si falta | Se genera automáticamente |
 |-------|----------|---------------------------|
-| `timestamp` | ❌ | ✅ Timestamp actual UTC (ISO-8601) |
+| `timestamp` | ❌ | ✅ Timestamp actual (Instant.now()) |
 | `trace_id` | ❌ | ✅ UUID v4 aleatorio |
 | `correlation_id` | ❌ | ✅ UUID v4 aleatorio |
+| `partition_key` | ❌ | ✅ Auto-extraído de geo.zone o payload.placa_vehicular |
+
+**Nota:** Aunque el esquema JSON marca estos campos como `required`, el **EventEnricher** los genera automáticamente si faltan, facilitando las pruebas y garantizando la completitud de los datos.
 
 #### 📝 Ejemplo: Evento Mínimo
 
-Puedes enviar un evento **sin** `timestamp`, `trace_id` ni `correlation_id`:
+Puedes enviar un evento **sin** `timestamp`, `trace_id`, `correlation_id` o `partition_key` (serán auto-generados):
 
 ```bash
 curl -X POST http://localhost:8000/events \
@@ -331,7 +345,6 @@ curl -X POST http://localhost:8000/events \
     "event_id": "f1e2d3c4-0099-4099-8099-000000000099",
     "producer": "test-minimal",
     "source": "simulated",
-    "partition_key": "zone_test",
     "geo": {
       "zone": "zone_test",
       "lat": 14.62,
@@ -353,10 +366,10 @@ curl -X POST http://localhost:8000/events \
   "event_id": "f1e2d3c4-0099-4099-8099-000000000099",
   "producer": "test-minimal",
   "source": "simulated",
-  "timestamp": "2025-10-01T12:34:56.789Z",        // ← Auto-generado
+  "timestamp": "2025-10-05T14:30:15.123Z",            // ← Auto-generado (Instant.now())
   "trace_id": "a1b2c3d4-5678-4abc-8def-123456789012", // ← Auto-generado
   "correlation_id": "b2c3d4e5-6789-4bcd-8ef0-234567890123", // ← Auto-generado
-  "partition_key": "zone_test",
+  "partition_key": "zone_test",                       // ← Auto-extraído de geo.zone
   "geo": {
     "zone": "zone_test",
     "lat": 14.62,
@@ -371,23 +384,26 @@ curl -X POST http://localhost:8000/events \
 
 #### ✅ Ventajas del Enriquecimiento Automático
 
-1. **Simplifica testing**: No necesitas generar UUIDs manualmente
-2. **Garantiza trazabilidad**: Todos los eventos tienen trace_id
-3. **Timestamps precisos**: Se usa el momento exacto de ingesta
+1. **Simplifica testing**: No necesitas generar UUIDs manualmente para trace_id/correlation_id
+2. **Garantiza trazabilidad**: Todos los eventos tienen trace_id y correlation_id
+3. **Auto-particionado**: Extrae partition_key de geo.zone o payload.placa_vehicular
 4. **Compatibilidad**: Puedes enviar campos completos si lo prefieres
 
 #### ⚠️ Notas Importantes
 
-- Si **envías** `timestamp`, `trace_id` o `correlation_id`, el Ingestor **respetará** tus valores
-- Los campos `event_id`, `event_version`, `event_type`, `producer`, `source`, `partition_key`, `geo`, `severity` y `payload` son **OBLIGATORIOS**
-- Los UUIDs auto-generados cumplen con el formato UUID v4
+- Si **envías** `timestamp`, `trace_id`, `correlation_id` o `partition_key`, el Ingestor **respetará** tus valores
+- El campo **`event_id` DEBE ser un UUID v4 válido** - El sistema lo convierte a tipo UUID para PostgreSQL (`UUID.fromString()`)
+- Los campos **estrictamente obligatorios** (no enriquecibles) son: `event_id` (UUID válido), `event_version`, `event_type`, `producer`, `source`, `geo`, `severity` y `payload`
+- Los UUIDs auto-generados para `trace_id` y `correlation_id` cumplen con el formato UUID v4
+- El timestamp auto-generado usa el formato ISO 8601 (ej: `2025-10-01T12:00:00Z`)
+- El `partition_key` es NOT NULL en la BD, por lo que el enriquecedor lo extrae de `geo.zone` si no lo envías
 
 ---
 
 ### Test 3: Verificar Evento en Kafka
 
 1. Ve a **Kafka UI**: http://localhost:8081
-2. Click en **Topics** → **t01.events.standardized**
+2. Click en **Topics** → **events.standardized**
 3. Tab **Messages**
 4. Deberías ver el evento con `event_id: "f1e2d3c4-0001-4001-8001-000000000001"`
 
@@ -400,7 +416,7 @@ curl -X POST http://localhost:8000/events \
 docker exec -it postgres psql -U postgres -d ciudades -c "SELECT event_id, event_type, zone FROM events ORDER BY ts_utc DESC LIMIT 5;"
 
 # WSL
-docker exec -it platform_postgres_1 psql -U postgres -d ciudades -c "SELECT event_id, event_type, zone FROM events ORDER BY ts_utc DESC LIMIT 5;"
+docker exec -it platform-postgres-1 psql -U postgres -d ciudades -c "SELECT event_id, event_type, zone FROM events ORDER BY ts_utc DESC LIMIT 5;"
 ```
 
 **Esperado:** Ver el evento `test-health-001`
@@ -484,14 +500,14 @@ Content-Type: application/json
 #### Opción 1: Kafka UI
 
 1. Ve a: http://localhost:8081
-2. Topics → **t01.correlated.alerts**
+2. Topics → **correlated.alerts**
 3. Messages
 4. Deberías ver una alerta de tipo `possible_robbery`
 
 #### Opción 2: PostgreSQL
 
 ```bash
-docker exec -it platform_postgres_1 psql -U postgres -d ciudades -c "SELECT alert_id, type, zone, score, created_at FROM alerts ORDER BY created_at DESC LIMIT 5;"
+docker exec -it platform-postgres-1 psql -U postgres -d ciudades -c "SELECT alert_id, type, zone, score, created_at FROM alerts ORDER BY created_at DESC LIMIT 5;"
 ```
 
 **Esperado:**
@@ -685,10 +701,17 @@ El correlator tiene lógica de idempotencia que rechaza eventos duplicados por 1
 
 **Solución:** Usa `event_id` únicos para cada evento de prueba.
 
-⚠️ **IMPORTANTE:** Los campos `event_id`, `correlation_id` y `trace_id` **DEBEN** ser UUIDs v4 válidos. El ingestor rechazará eventos con strings arbitrarios:
+**⚠️ IMPORTANTE: Los Event IDs DEBEN ser UUIDs v4 válidos**
 
+El ingestor convierte `event_id`, `correlation_id` y `trace_id` a tipo UUID para persistirlos en PostgreSQL. Si envías strings que no sean UUIDs válidos, obtendrás error 400:
+
+```java
+// EventService.java
+entity.setEventId(UUID.fromString(event.getEventId())); // ← Lanza excepción si no es UUID válido
+```
+
+**Generar UUIDs v4 válidos:**
 ```bash
-# Generar UUIDs v4
 # PowerShell
 New-Guid
 
@@ -759,9 +782,15 @@ curl http://localhost:8000/events/health
 #   "status": "UP",
 #   "kafka": "available",
 #   "validator": "ready",
-#   "timestamp": "2025-10-01T12:00:00Z",
+#   "timestamp": "2025-10-05T12:00:00.123Z",
 #   "service": "ingestor",
-#   "version": "1.0"
+#   "version": "1.0",
+#   "details": {
+#     "topic": "events.standardized",
+#     "schema_version": "1.0",
+#     "kafka_template_configured": true,
+#     "note": "Health check uses basic availability verification"
+#   }
 # }
 
 # Obtener Schema Canónico
@@ -849,6 +878,6 @@ docker network rm ciudad-inteligente-net
 
 
 
-**Última actualización:** 1 de octubre de 2025  
+**Última actualización:** 5 de octubre de 2025  
 **Versión del sistema:** 1.0  
 **Curso:** Arquitectura de Computadoras II

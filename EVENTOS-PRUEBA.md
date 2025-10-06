@@ -56,30 +56,45 @@ redisTemplate.opsForValue().set(seenKey, "1", Duration.ofMinutes(10));
 
 El **Event Ingestor** enriquece automáticamente los eventos con campos opcionales:
 
-| Campo | Obligatorio | Si falta | Acción del Ingestor |
-|-------|-------------|----------|---------------------|
-| `event_id` | ✅ SÍ | ❌ Error | Rechaza evento (400 Bad Request) |
-| `timestamp` | ⚠️ Opcional | ✅ Auto-genera | Timestamp UTC actual (ISO-8601) |
-| `trace_id` | ⚠️ Opcional | ✅ Auto-genera | UUID v4 aleatorio |
-| `correlation_id` | ⚠️ Opcional | ✅ Auto-genera | UUID v4 aleatorio |
+| Campo | Obligatorio en Request | Si falta | Acción del Ingestor |
+|-------|------------------------|----------|---------------------|
+| `event_id` | ✅ SÍ (UUID válido) | ❌ Error | Rechaza evento (400 Bad Request) |
+| `timestamp` | ❌ No | ✅ Auto-genera | Timestamp UTC actual (ISO-8601) |
+| `trace_id` | ❌ No | ✅ Auto-genera | UUID v4 aleatorio |
+| `correlation_id` | ❌ No | ✅ Auto-genera | UUID v4 aleatorio |
+| `partition_key` | ❌ No | ✅ Auto-extrae | De geo.zone o payload.placa_vehicular |
+
+**⚠️ Importante sobre `partition_key`:**
+- La BD requiere `partition_key NOT NULL`, por lo que el enriquecedor **DEBE** extraerlo si no viene
+- Prioridad de extracción: `geo.zone` > `payload.placa_vehicular` > **error si ninguno existe**
+- Si envías `partition_key` explícitamente, el ingestor lo respetará
 
 **Esto significa que puedes:**
-1. **Enviar eventos SIN** `timestamp`, `trace_id` o `correlation_id` - El Ingestor los generará
+1. **Enviar eventos SIN** `timestamp`, `trace_id`, `correlation_id` o `partition_key` - El Ingestor los generará/extraerá automáticamente
 2. **Enviar eventos CON** estos campos - El Ingestor respetará tus valores
+3. **SIEMPRE enviar** `event_id` como **UUID v4 válido** - No negociable
 
 ### Cómo Generar Event IDs Únicos
 
-**✅ IMPORTANTE: Los Event IDs DEBEN ser UUIDs v4 válidos**
+**⚠️ OBLIGATORIO: Los Event IDs DEBEN ser UUIDs v4 válidos**
 
-El ingestor valida que sean UUIDs v4. Si usas strings arbitrarios, obtendrás:
+El ingestor convierte el `event_id` a UUID para persistirlo en PostgreSQL (columna tipo `uuid`). Si envías un string que no sea UUID válido, obtendrás error:
+
+```java
+// EventService.java, línea 83
+entity.setEventId(UUID.fromString(event.getEventId())); // ← Lanza excepción si no es UUID
+```
+
+**Ejemplo de error si usas string no-UUID:**
 ```json
 {
-  "error_details": "Invalid UUID string: test-scenario1-panic-001",
-  "status": "error"
+  "status": "error",
+  "message": "Failed to process event",
+  "error_details": "Invalid UUID string: test-001"
 }
 ```
 
-**Generar UUIDs v4:**
+**Generar UUIDs v4 válidos:**
 ```bash
 # Linux/Mac
 uuidgen
@@ -122,13 +137,14 @@ https://www.uuidgenerator.net/
   "event_id": "a1b2c3d4-0001-4001-8001-000000000001",
   "producer": "test-suite",
   "source": "simulated",
-  "partition_key": "zone_centro",
   "geo": {...},
   "severity": "critical",
   "payload": {...}
-  // timestamp, trace_id, correlation_id se auto-generan
+  // timestamp, trace_id, correlation_id y partition_key se auto-generan/extraen
 }
 ```
+
+**Nota:** En el ejemplo anterior, `partition_key` se extraerá automáticamente de `geo.zone`. Puedes incluirlo explícitamente si prefieres.
 
 **⚠️ IMPORTANTE:** Si pruebas un escenario y falla, **genera nuevos UUIDs** antes de reintentarlo. De lo contrario, el correlator ignorará los eventos duplicados por 10 minutos.
 

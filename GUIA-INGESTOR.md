@@ -22,9 +22,9 @@ Este documento explica cómo funciona el **Ingestor**, el microservicio encargad
 El Ingestor es la "puerta de entrada" del sistema de ciudad inteligente. Su trabajo es:
 - **Recibir eventos** vía REST API (HTTP POST)
 - **Validar formato** contra esquema JSON canónico
-- **Enriquecer automáticamente** campos faltantes (timestamp, IDs de correlación)
+- **Enriquecer automáticamente** campos faltantes (timestamp, IDs de correlación, partition_key)
 - **Persistir eventos** en PostgreSQL para auditoría
-- **Publicar en Kafka** al topic `t01.events.standardized`
+- **Publicar en Kafka** al topic `events.standardized`
 - **Procesar eventos individuales y en lote** (bulk processing)
 
 ### Tecnologías Clave
@@ -86,15 +86,16 @@ El Ingestor es la "puerta de entrada" del sistema de ciudad inteligente. Su trab
            ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │               PostgreSQL Database                                │
-│  Tabla: t01_event_ingestor                                      │
-│  - event_id, event_type, zone, timestamp, payload, etc.         │
+│  Tabla: events                                                   │
+│  - event_id (UUID PK), event_type, zone, ts_utc, payload, etc. │
+│  - Validación: existsById() evita duplicados                    │
 └─────────────────────────────────────────────────────────────────┘
            │
            │ Publica
            ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    KAFKA TOPIC                                   │
-│              t01.events.standardized                             │
+│              events.standardized                                 │
 │  Consumidores:                                                   │
 │  - Correlator (detección de patrones)                           │
 │  - Otros microservicios de análisis                             │
@@ -139,7 +140,7 @@ Content-Type: application/json
 {
   "event_version": "1.0",
   "event_type": "panic.button",
-  "event_id": "evt-123",
+  "event_id": "f1e2d3c4-5678-4abc-8def-111111111111",
   "producer": "mobile-app",
   "source": "simulated",
   "partition_key": "zone-norte",
@@ -161,7 +162,7 @@ Content-Type: application/json
 {
   "status": "success",
   "message": "Event processed and published successfully",
-  "event_id": "evt-123",
+  "event_id": "f1e2d3c4-5678-4abc-8def-111111111111",
   "event_type": "panic.button",
   "partition_key": "zone-norte",
   "timestamp": "2025-10-01T10:30:00Z"
@@ -197,16 +198,66 @@ public void enrichEventIfNeeded(CanonicalEvent event) {
     if (event.getCorrelationId() == null || event.getCorrelationId().isEmpty()) {
         event.setCorrelationId(UUID.randomUUID().toString());
     }
+    
+    // Auto-extraer partition_key si está vacío
+    if (event.getPartitionKey() == null || event.getPartitionKey().isEmpty()) {
+        String extractedKey = extractPartitionKey(event);
+        if (extractedKey != null && !extractedKey.isEmpty()) {
+            event.setPartitionKey(extractedKey);
+        }
+    }
+}
+
+private String extractPartitionKey(CanonicalEvent event) {
+    // Prioridad 1: geo.zone
+    if (event.getGeo() != null && event.getGeo().getZone() != null) {
+        return event.getGeo().getZone();
+    }
+    
+    // Prioridad 2: payload.placa_vehicular (para eventos LPR)
+    if (event.getData() != null) {
+        JsonNode payload = (JsonNode) event.getData();
+        if (payload.has("placa_vehicular")) {
+            return payload.get("placa_vehicular").asText();
+        }
+    }
+    
+    return null; // No se pudo extraer
 }
 ```
 
 #### Campos Enriquecidos Automáticamente
 
-| Campo | Tipo | Generación Automática | Ejemplo |
-|-------|------|----------------------|---------|
-| `timestamp` | ISO 8601 | `Instant.now()` | `2025-10-01T10:30:00Z` |
-| `trace_id` | UUID v4 | `UUID.randomUUID()` | `f47ac10b-58cc-4372-a567-0e02b2c3d479` |
-| `correlation_id` | UUID v4 | `UUID.randomUUID()` | `6ba7b810-9dad-11d1-80b4-00c04fd430c8` |
+> ⚠️ **ADVERTENCIA CRÍTICA - Validación de UUIDs:**
+> 
+> El Ingestor **valida estrictamente** que `event_id`, `trace_id` y `correlation_id` sean **UUIDs v4 válidos** antes de persistir en PostgreSQL.
+> 
+> - **Si envías estos campos**: DEBEN ser UUIDs válidos (formato: `xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx`)
+> - **Si NO los envías**: El Ingestor los generará automáticamente con `UUID.randomUUID()`
+> - **Si envías strings inválidos** (ej: `"evt-123"`, `"test-id"`): El Ingestor **rechazará** el evento con error `500 Internal Server Error: Invalid UUID string`
+> 
+> **Generar UUIDs válidos:**
+> ```bash
+> # PowerShell
+> [guid]::NewGuid()
+> 
+> # Linux/Mac
+> uuidgen
+> 
+> # Python
+> python -c "import uuid; print(uuid.uuid4())"
+> 
+> # Online
+> https://www.uuidgenerator.net/version4
+> ```
+
+| Campo | Tipo | Generación Automática | Validación | Ejemplo |
+|-------|------|----------------------|------------|---------|
+| `timestamp` | ISO 8601 | `Instant.now()` si falta | Formato ISO 8601 | `2025-10-01T10:30:00Z` |
+| `trace_id` | UUID v4 | `UUID.randomUUID()` si falta | **DEBE ser UUID válido si se envía** | `f47ac10b-58cc-4372-a567-0e02b2c3d479` |
+| `correlation_id` | UUID v4 | `UUID.randomUUID()` si falta | **DEBE ser UUID válido si se envía** | `6ba7b810-9dad-11d1-80b4-00c04fd430c8` |
+| `partition_key` | String | Extraído de `geo.zone` o `payload.placa_vehicular` | String cualquiera | `zone_4` o `ABC123` |
+| `event_id` | UUID v4 | **OBLIGATORIO (NO se auto-genera)** | **DEBE ser UUID válido** | `a1b2c3d4-5678-4abc-8def-123456789012` |
 
 **Ejemplo de Enriquecimiento:**
 
@@ -215,7 +266,7 @@ public void enrichEventIfNeeded(CanonicalEvent event) {
 {
   "event_version": "1.0",
   "event_type": "sensor.speed",
-  "event_id": "sensor-001",
+  "event_id": "a1b2c3d4-0001-4001-8001-222222222222",
   "producer": "speed-sensor",
   "source": "simulated",
   "partition_key": "zone-centro",
@@ -230,7 +281,7 @@ public void enrichEventIfNeeded(CanonicalEvent event) {
 {
   "event_version": "1.0",
   "event_type": "sensor.speed",
-  "event_id": "sensor-001",
+  "event_id": "a1b2c3d4-0001-4001-8001-222222222222",
   "producer": "speed-sensor",
   "source": "simulated",
   "timestamp": "2025-10-01T10:30:00.123Z",          ← GENERADO
@@ -342,7 +393,7 @@ public void validate(String eventJson) throws Exception {
 {
   "event_version": "2.0",           ← ERROR: debe ser "1.0"
   "event_type": "custom.type",      ← ERROR: tipo no permitido
-  "event_id": "evt-001",
+  "event_id": "b1c2d3e4-0001-4001-8001-333333333333",
   "producer": "test",
   "source": "simulated",
   "timestamp": "2025-10-01T10:30:00Z",
@@ -359,10 +410,34 @@ public void validate(String eventJson) throws Exception {
   "status": "error",
   "message": "Failed to process event",
   "error_details": "Validation errors: [$.event_version: does not have a value in the enumeration [1.0], $.event_type: does not have a value in the enumeration [...], $.geo: required property 'zone' not found, $.severity: does not have a value in the enumeration [info, warning, critical]]",
-  "event_id": "evt-001",
+  "event_id": "b1c2d3e4-0001-4001-8001-333333333333",
   "timestamp": "2025-10-01T10:30:15Z"
 }
 ```
+
+**⚠️ Error Común: UUID Inválido**
+
+Si envías `event_id`, `trace_id` o `correlation_id` con formato incorrecto:
+
+```json
+{
+  "event_id": "evt-123",  // ❌ NO ES UUID VÁLIDO
+  "trace_id": "test-trace",  // ❌ NO ES UUID VÁLIDO
+  ...
+}
+```
+
+**Obtendrás:**
+```json
+{
+  "status": "error",
+  "message": "Failed to process event",
+  "error_details": "Invalid UUID string: evt-123",
+  "timestamp": "2025-10-01T10:30:15Z"
+}
+```
+
+**Solución:** Usa UUIDs válidos o **omite estos campos** para que se auto-generen.
 
 **¿Qué buscar en caso de error?**
 - Si validación falla: Revisar mensaje de error, comparar con esquema JSON
@@ -391,11 +466,11 @@ Mapea eventos a la tabla PostgreSQL:
 
 ```java
 @Entity
-@Table(name = "t01_event_ingestor")
+@Table(name = "events")
 public class EventEntity {
     @Id
-    @GeneratedValue(strategy = GenerationType.AUTO)
-    private UUID eventId;
+    @Column(name = "event_id", nullable = false)
+    private UUID eventId;                // UUID NO autoincremental
     
     private String eventType;
     private String eventVersion;
@@ -416,10 +491,12 @@ public class EventEntity {
 }
 ```
 
+> ⚠️ **IMPORTANTE:** El `event_id` NO es autoincremental. Debe venir en el request o ser generado por el cliente. Esto garantiza idempotencia y evita duplicados.
+
 #### Estructura de la Tabla PostgreSQL
 
 ```sql
-CREATE TABLE t01_event_ingestor (
+CREATE TABLE events (
     event_id UUID PRIMARY KEY,
     event_type VARCHAR(100),
     event_version VARCHAR(10),
@@ -456,7 +533,7 @@ El método `mapToEntity()` en `EventService` realiza la conversión:
 - Si error de tipo: Verificar conversiones UUID/OffsetDateTime
 - Consultar eventos guardados:
   ```sql
-  SELECT * FROM t01_event_ingestor ORDER BY ts_utc DESC LIMIT 10;
+  SELECT * FROM events ORDER BY ts_utc DESC LIMIT 10;
   ```
 - Logs: `[EventRepository]` en consola
 
@@ -501,7 +578,7 @@ spring.kafka.producer.properties.spring.json.add.type.headers=false
 spring.kafka.admin.auto-create=true
 
 # Topic
-app.kafka.topic.events-standardized=t01.events.standardized
+app.kafka.topic.events-standardized=events.standardized
 ```
 
 #### Particionamiento en Kafka
@@ -708,7 +785,7 @@ GET http://localhost:8000/events/health
   "service": "ingestor",
   "version": "1.0",
   "details": {
-    "topic": "t01.events.standardized",
+    "topic": "events.standardized",
     "schema_version": "1.0",
     "kafka_template_configured": true,
     "note": "Health check uses basic availability verification"
@@ -780,6 +857,12 @@ public void processAndPublish(CanonicalEvent event) throws Exception {
     String eventJson = objectMapper.writeValueAsString(event);
     validator.validate(eventJson);
     
+    // 2.5. VALIDACIÓN DE DUPLICADOS
+    UUID eventId = UUID.fromString(event.getEventId());
+    if (eventRepository.existsById(eventId)) {
+        throw new IllegalArgumentException("Duplicate event_id rejected: " + eventId);
+    }
+    
     // 3. PERSISTENCIA
     EventEntity entity = mapToEntity(event);
     eventRepository.save(entity);
@@ -795,11 +878,16 @@ public void processAndPublish(CanonicalEvent event) throws Exception {
 **Flujo Secuencial:**
 1. ✅ Enriquece campos faltantes (timestamp, IDs)
 2. ✅ Valida contra esquema JSON (lanza excepción si falla)
-3. ✅ Guarda en PostgreSQL para auditoría
-4. ✅ Publica a Kafka para procesamiento downstream
+3. ✅ **Valida duplicados** (verifica si event_id ya existe en BD)
+4. ✅ Guarda en PostgreSQL para auditoría
+5. ✅ Publica a Kafka para procesamiento downstream
+
+> **⚠️ IMPORTANTE - Orden de Operaciones:**  
+> La persistencia **SIEMPRE ocurre ANTES** de la publicación a Kafka. Esto garantiza integridad de datos: si PostgreSQL falla, el evento NO llega a Kafka (evita mensajes huérfanos). Si Kafka falla, el evento YA está guardado y puede reintentarse.
 
 **Manejo de Errores:**
 - Si **validación falla** → Evento rechazado, NO se guarda ni publica
+- Si **evento duplicado** → Devuelve HTTP 400 con mensaje "Duplicate event_id rejected"
 - Si **persistencia falla** → Evento rechazado, NO se publica (integridad de datos)
 - Si **publicación falla** → Evento YA está guardado en BD (puede reintentarse)
 
@@ -914,7 +1002,7 @@ curl -X POST http://localhost:8000/events \
   -d '{
     "event_version": "1.0",
     "event_type": "panic.button",
-    "event_id": "evt-123",
+    "event_id": "c1d2e3f4-0001-4001-8001-444444444444",
     "producer": "mobile-app",
     "source": "simulated",
     "partition_key": "zone-norte",
@@ -932,7 +1020,7 @@ curl -X POST http://localhost:8000/events/bulk \
     {
       "event_version": "1.0",
       "event_type": "sensor.speed",
-      "event_id": "evt-001",
+      "event_id": "d1e2f3a4-0001-4001-8001-555555555555",
       "producer": "sensor-1",
       "source": "simulated",
       "partition_key": "zone-norte",
@@ -943,7 +1031,7 @@ curl -X POST http://localhost:8000/events/bulk \
     {
       "event_version": "1.0",
       "event_type": "sensor.lpr",
-      "event_id": "evt-002",
+      "event_id": "e1f2a3b4-0002-4002-8002-666666666666",
       "producer": "lpr-camera-5",
       "source": "simulated",
       "partition_key": "zone-centro",
@@ -1122,7 +1210,7 @@ SELECT
   zone, 
   severity, 
   ts_utc
-FROM t01_event_ingestor
+FROM events
 ORDER BY ts_utc DESC
 LIMIT 20;
 ```
@@ -1132,7 +1220,7 @@ LIMIT 20;
 SELECT 
   event_type, 
   COUNT(*) as total
-FROM t01_event_ingestor
+FROM events
 GROUP BY event_type
 ORDER BY total DESC;
 ```
@@ -1145,7 +1233,7 @@ SELECT
   severity, 
   ts_utc, 
   payload
-FROM t01_event_ingestor
+FROM events
 WHERE zone = 'Norte'
 ORDER BY ts_utc DESC
 LIMIT 10;
@@ -1159,7 +1247,7 @@ SELECT
   zone, 
   ts_utc, 
   payload
-FROM t01_event_ingestor
+FROM events
 WHERE severity = 'critical'
 ORDER BY ts_utc DESC;
 ```
@@ -1171,7 +1259,7 @@ SELECT
   event_type, 
   correlation_id, 
   trace_id
-FROM t01_event_ingestor
+FROM events
 WHERE trace_id = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
 ```
 
@@ -1182,7 +1270,7 @@ SELECT
   event_id, 
   event_type, 
   payload->'speed' as speed
-FROM t01_event_ingestor
+FROM events
 WHERE payload ? 'speed'  -- Verifica que existe la clave
 AND (payload->>'speed')::int > 80;
 ```
@@ -1274,7 +1362,7 @@ AND (payload->>'speed')::int > 80;
    ```bash
    docker exec -it kafka kafka-topics --list --bootstrap-server localhost:9092
    ```
-   Debe listar: `t01.events.standardized`
+   Debe listar: `events.standardized`
 
 2. **Verificar configuración de bootstrap-servers:**
    ```bash
@@ -1285,14 +1373,14 @@ AND (payload->>'speed')::int > 80;
    ```bash
    docker exec -it kafka kafka-console-producer \
      --bootstrap-server localhost:9092 \
-     --topic t01.events.standardized
+     --topic events.standardized
    ```
 
 4. **Ver mensajes en topic:**
    ```bash
    docker exec -it kafka kafka-console-consumer \
      --bootstrap-server localhost:9092 \
-     --topic t01.events.standardized \
+     --topic events.standardized \
      --from-beginning
    ```
 
@@ -1316,12 +1404,12 @@ AND (payload->>'speed')::int > 80;
    ```sql
    \dt
    ```
-   Debe listar: `t01_event_ingestor`
+   Debe listar: `events`
 
 3. **Si tabla no existe:**
    ```sql
    -- JPA debería crearla automáticamente, pero si no:
-   CREATE TABLE t01_event_ingestor (
+   CREATE TABLE events (
      event_id UUID PRIMARY KEY,
      event_type VARCHAR(100),
      event_version VARCHAR(10),
@@ -1456,7 +1544,7 @@ docker ps | grep kafka
 # Ver mensajes en topic Kafka
 docker exec -it kafka kafka-console-consumer \
   --bootstrap-server localhost:9092 \
-  --topic t01.events.standardized \
+  --topic events.standardized \
   --from-beginning
 
 # Conectar a PostgreSQL
@@ -1464,7 +1552,7 @@ docker exec -it postgres psql -U postgres -d ciudades
 
 # Ver últimos eventos en BD
 docker exec -it postgres psql -U postgres -d ciudades \
-  -c "SELECT event_id, event_type, zone, ts_utc FROM t01_event_ingestor ORDER BY ts_utc DESC LIMIT 10;"
+  -c "SELECT event_id, event_type, zone, ts_utc FROM events ORDER BY ts_utc DESC LIMIT 10;"
 
 # Verificar health del Ingestor
 curl http://localhost:8000/events/health
@@ -1500,8 +1588,8 @@ curl -X POST http://localhost:8000/events \
 3. SERVICE: Orquesta procesamiento
    ├── ENRICHER: Agrega timestamp, trace_id, correlation_id (si faltan)
    ├── VALIDATOR: Valida contra canonical-event-schema.json
-   ├── REPOSITORY: Guarda en PostgreSQL (tabla t01_event_ingestor)
-   └── KAFKA: Publica a topic t01.events.standardized
+   ├── REPOSITORY: Guarda en PostgreSQL (tabla events)
+   └── KAFKA: Publica a topic events.standardized
    ↓
 4. RESPONSE: Retorna 202 Accepted con detalles
    ↓
