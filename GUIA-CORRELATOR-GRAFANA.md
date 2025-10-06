@@ -39,33 +39,35 @@ Grafana es la **interfaz de visualización** que muestra:
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                        KAFKA TOPIC                               │
-│                    canonical-events                              │
+│                   events.standardized                            │
 └────────────────────────────┬────────────────────────────────────┘
                              │
                              │ Consume
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                      EventConsumer.java                          │
-│  - Lee eventos del topic Kafka                                   │
+│  - @KafkaListener topic: events.standardized                    │
 │  - Valida formato del evento canónico                           │
 │  - Delega procesamiento a CorrelatorService                     │
 └────────────────────────────┬────────────────────────────────────┘
                              │
-                             │ Procesa
+                             │ processEvent()
                              ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │                    CorrelatorService.java                        │
-│  - Agrupa eventos por zona y ventana de tiempo                  │
-│  - Aplica reglas de correlación (detecta patrones)              │
-│  - Genera alertas cuando se cumplen condiciones                 │
+│  - Idempotencia: evita duplicados por event_id (Redis)         │
+│  - Guarda EventSummary por zona y placa en Redis (TTL 10 min)  │
+│  - Aplica reglas de correlación en ventanas de tiempo           │
+│  - Genera CorrelatedAlert cuando cumple condiciones             │
 └────────────────────┬───────────────────────┬────────────────────┘
                      │                       │
-                     │ Guarda Alerta         │ Cachea
+                     │ Guarda + Publica      │ Cachea
                      ▼                       ▼
 ┌──────────────────────────────┐  ┌──────────────────────────────┐
 │     AlertService.java        │  │      Redis Cache             │
-│  - Persiste en PostgreSQL    │  │  - Alertas activas en memoria│
-│  - Consulta alertas activas  │  │  - TTL de 24 horas           │
+│  - Persiste en PostgreSQL    │  │  - Alertas activas (TTL 10m) │
+│  - Mapea a AlertEntity       │  │  - EventSummary por zona     │
+│  - Publica a Kafka           │  │  - Idempotencia por event_id │
 └──────────────────────────────┘  └──────────────────────────────┘
                      │
                      │ Almacena
@@ -73,7 +75,17 @@ Grafana es la **interfaz de visualización** que muestra:
 ┌─────────────────────────────────────────────────────────────────┐
 │                      PostgreSQL Database                         │
 │  Tabla: alerts                                                   │
-│  - id, zone, alert_type, severity, event_count, etc.            │
+│  - alert_id (UUID), correlation_id (UUID), type, score, zone    │
+│  - window_start, window_end, evidence (JSONB), created_at       │
+└─────────────────────────────────────────────────────────────────┘
+                     │
+                     │ Publica a Kafka
+                     ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      KAFKA TOPIC                                 │
+│                   correlated.alerts                              │
+│  - Key: zona                                                     │
+│  - Value: CorrelatedAlert (JSON)                                │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -97,19 +109,49 @@ Grafana es la **interfaz de visualización** que muestra:
 **Ubicación:** `src/main/java/com/ciudadesinteligentes/correlator/consumer/EventConsumer.java`
 
 ```java
-@KafkaListener(topics = "canonical-events", groupId = "correlator-group")
-public void consume(String eventJson) {
-    // 1. Recibe evento desde Kafka
-    // 2. Valida que cumpla con el esquema canónico
-    // 3. Deserializa JSON a objeto CanonicalEvent
-    // 4. Envía a CorrelatorService para procesamiento
+@Component
+public class EventConsumer {
+    private CanonicalEventValidator validator;
+    
+    @Autowired
+    private CorrelatorService correlatorService;
+    
+    @PostConstruct
+    public void init() {
+        // Carga el esquema JSON desde resources al iniciar
+        InputStream is = getClass().getClassLoader()
+            .getResourceAsStream("canonical-event-schema.json");
+        String schemaJson = new String(is.readAllBytes());
+        validator = new CanonicalEventValidator(schemaJson);
+    }
+    
+    @KafkaListener(topics = "events.standardized", groupId = "correlator-group")
+    public void consume(CanonicalEvent event) {
+        try {
+            // 1. Valida el evento contra el esquema canónico
+            validator.validate(event);
+            
+            // 2. Envía a CorrelatorService para procesamiento
+            correlatorService.processEvent(event);
+        } catch (Exception e) {
+            System.err.println("Evento inválido o error: " + e.getMessage());
+        }
+    }
 }
 ```
 
+> ⚠️ **IMPORTANTE:** El topic correcto es `events.standardized` (no `canonical-events`).
+
+**Características clave:**
+- **Deserialización automática:** Kafka deserializa directamente a `CanonicalEvent` (configurado en `application.properties`)
+- **Validación en tiempo de consumo:** Cada evento se valida antes de procesarse
+- **Manejo de errores:** Eventos inválidos se loguean pero no detienen el consumer
+
 **¿Qué buscar en caso de error?**
-- Si no recibe eventos: Verificar conexión a Kafka (`application.properties`)
-- Si falla validación: Revisar `canonical-event-schema.json`
-- Logs: `[CONSUMER]` en consola
+- Si no recibe eventos: Verificar `spring.kafka.bootstrap-servers` y que el topic `events.standardized` exista
+- Si falla validación: Revisar que `canonical-event-schema.json` esté en `src/main/resources/`
+- Si error de deserialización: Verificar que el evento cumpla con la estructura de `CanonicalEvent.java`
+- Logs: `"Evento inválido o error: ..."` en consola
 
 ---
 
@@ -117,56 +159,169 @@ public void consume(String eventJson) {
 
 **Ubicación:** `src/main/java/com/ciudadesinteligentes/correlator/service/CorrelatorService.java`
 
-Este es el componente más importante. Realiza tres operaciones clave:
+Este es el componente más importante. Realiza **cuatro operaciones clave:**
 
-#### A. Agrupación por Zona y Ventana de Tiempo
+#### A. Idempotencia (Evitar Duplicados)
 
 ```java
-private Map<String, List<CanonicalEvent>> groupEventsByZone(List<CanonicalEvent> events) {
-    // Agrupa eventos de los últimos 5 minutos por zona geográfica
-    // Ejemplo: {"Norte": [evento1, evento2], "Centro": [evento3]}
+public void processEvent(CanonicalEvent event) {
+    // 1. Verificar si el evento ya fue procesado (por event_id)
+    String seenKey = "corr:seen:" + event.event_id;
+    Boolean alreadySeen = redisTemplate.hasKey(seenKey);
+    if (Boolean.TRUE.equals(alreadySeen)) {
+        // Evento ya procesado, lo ignoramos
+        return;
+    }
+    
+    // 2. Marcar como visto con TTL de 10 minutos
+    redisTemplate.opsForValue().set(seenKey, "1", Duration.ofMinutes(10));
+    
+    // ... continúa procesamiento
 }
 ```
 
-**¿Por qué 5 minutos?**
-- Es una ventana suficiente para detectar patrones (ejemplo: varios robos en la misma zona)
-- Evita falsos positivos (eventos aislados no generan alerta)
+**¿Por qué idempotencia?**
+- Kafka puede entregar el mismo mensaje múltiples veces (at-least-once delivery)
+- Evita generar alertas duplicadas por el mismo evento
+- TTL de 10 minutos es suficiente para ventanas de correlación
 
-#### B. Detección de Patrones Sospechosos
+#### B. Almacenamiento Temporal en Redis
 
-El servicio aplica **reglas de correlación** específicas:
-
-| Tipo de Alerta | Condición | Severidad |
-|----------------|-----------|-----------|
-| `possible_robbery` | ≥2 eventos "suspicious_behavior" en misma zona | MEDIUM |
-| `accident` | ≥3 eventos "traffic_jam" en misma zona | HIGH |
-| `fire_risk` | ≥1 evento "fire" | CRITICAL |
-
-**Código relevante:**
 ```java
-private void analyzeZoneEvents(String zone, List<CanonicalEvent> events) {
-    // Cuenta tipos de eventos por zona
-    long suspiciousBehaviorCount = events.stream()
-        .filter(e -> "suspicious_behavior".equals(e.getEvent_type()))
-        .count();
-    
-    // Si hay 2+ comportamientos sospechosos → ALERTA
-    if (suspiciousBehaviorCount >= 2) {
-        createAlert(zone, "possible_robbery", "MEDIUM", ...);
+// Extraer zona del evento
+String zone = event.geo.get("zone").toString();
+String zoneKey = "corr:zone:" + zone;
+
+// Crear resumen del evento (más liviano que el evento completo)
+EventSummary summary = new EventSummary(
+    event.getEvent_type(),
+    event.getTimestamp(),
+    event.getPayload(),
+    event.getEvent_id()
+);
+
+// Guardar en Redis lista por zona (TTL 10 min)
+redisTemplate.opsForList().rightPush(zoneKey, summary);
+redisTemplate.expire(zoneKey, Duration.ofMinutes(10));
+
+// Guardar también por placa si es evento LPR (rastreo multi-zona)
+if (event.payload != null && event.payload.containsKey("placa_vehicular")) {
+    String plate = event.payload.get("placa_vehicular").toString();
+    String plateKey = "corr:plate:" + plate;
+    redisTemplate.opsForList().rightPush(plateKey, summary);
+    redisTemplate.expire(plateKey, Duration.ofMinutes(10));
+}
+```
+
+**Ventajas de usar EventSummary:**
+- Ocupa menos memoria en Redis (solo campos necesarios)
+- Permite correlacionar eventos por zona y por placa vehicular
+- TTL automático limpia datos antiguos
+
+#### C. Detección de Patrones Sospechosos
+
+El servicio aplica **2 reglas de correlación** específicas:
+
+| Tipo de Alerta | Condición | Ventana de Tiempo | Score |
+|----------------|-----------|-------------------|-------|
+| `possible_robbery` | ≥1 `panic.button` + ≥1 `sensor.lpr` (velocidad > 80 km/h) | ±2 minutos | 0.85 |
+| `accident` | ≥1 `citizen.report` (tipo: accidente) + ≥1 `sensor.acoustic` (explosion/vidrio_roto) | ±5 minutos | 0.85 |
+
+**Código real de detección:**
+```java
+// Obtener eventos recientes de la zona desde Redis
+List<Object> recentEvents = redisTemplate.opsForList().range(zoneKey, 0, -1);
+
+// Clasificar eventos por tipo y ventana temporal
+List<EventSummary> panicEvents = new ArrayList<>();
+List<EventSummary> lprEvents = new ArrayList<>();
+List<EventSummary> citizenEvents = new ArrayList<>();
+List<EventSummary> acousticEvents = new ArrayList<>();
+Instant now = Instant.parse(event.timestamp);
+
+for (Object obj : recentEvents) {
+    if (obj instanceof EventSummary) {
+        EventSummary e = (EventSummary) obj;
+        Instant ts = Instant.parse(e.getTimestamp());
+        long diffSec = Math.abs(Duration.between(ts, now).getSeconds());
+        
+        // Regla 1: Posible robo (ventana ±2 min = 120 seg)
+        if ("panic.button".equals(e.getEvent_type()) && diffSec <= 120) {
+            panicEvents.add(e);
+        }
+        if ("sensor.lpr".equals(e.getEvent_type()) && 
+            e.getPayload().containsKey("velocidad_estimada")) {
+            double v = Double.parseDouble(
+                e.getPayload().get("velocidad_estimada").toString());
+            if (v > 80 && diffSec <= 120) {
+                lprEvents.add(e);
+            }
+        }
+        
+        // Regla 2: Accidente (ventana ±5 min = 300 seg)
+        if ("citizen.report".equals(e.getEvent_type()) && 
+            "accidente".equals(e.getPayload().get("tipo_evento")) && 
+            diffSec <= 300) {
+            citizenEvents.add(e);
+        }
+        if ("sensor.acoustic".equals(e.getEvent_type())) {
+            String tipoSonido = e.getPayload().get("tipo_sonido_detectado").toString();
+            if (("explosion".equals(tipoSonido) || "vidrio_roto".equals(tipoSonido)) 
+                && diffSec <= 300) {
+                acousticEvents.add(e);
+            }
+        }
     }
 }
 ```
 
-#### C. Generación de Alertas
+#### D. Generación de Alertas
 
 ```java
-private void createAlert(String zone, String alertType, String severity, ...) {
-    // 1. Crea objeto CorrelatedAlert
-    // 2. Guarda en PostgreSQL vía AlertService
-    // 3. Cachea en Redis para consultas rápidas
-    // 4. Loguea: [ALERT GENERATED]
+// Regla 1: Posible robo
+if (!panicEvents.isEmpty() && !lprEvents.isEmpty()) {
+    CorrelatedAlert alert = new CorrelatedAlert();
+    alert.alert_id = UUID.randomUUID().toString();
+    alert.correlation_id = event.correlation_id != null 
+        ? event.correlation_id 
+        : UUID.randomUUID().toString();
+    alert.type = "possible_robbery";
+    alert.score = 0.85;
+    alert.zone = zone;
+    alert.window = Map.of(
+        "start", panicEvents.get(0).getTimestamp(),
+        "end", event.getTimestamp()
+    );
+    
+    // Agregar IDs de eventos como evidencia
+    List<String> evidence = new ArrayList<>();
+    for (EventSummary e : panicEvents) evidence.add(e.getEvent_id());
+    for (EventSummary e : lprEvents) evidence.add(e.getEvent_id());
+    alert.evidence = evidence;
+    alert.created_at = Instant.now().toString();
+    
+    // 1. Persistir en PostgreSQL
+    alertService.saveAlert(alert);
+    
+    // 2. Publicar a Kafka (topic: correlated.alerts)
+    kafkaTemplate.send("correlated.alerts", alert.zone, alert);
+    
+    // 3. Cachear en Redis para endpoint /alerts/active (TTL 10 min)
+    String alertActiveKey = "alerts:active:" + zone;
+    redisTemplate.opsForList().rightPush(alertActiveKey, alert);
+    redisTemplate.expire(alertActiveKey, Duration.ofMinutes(10));
+}
+
+// Regla 2: Accidente (mismo flujo)
+if (!citizenEvents.isEmpty() && !acousticEvents.isEmpty()) {
+    // ... código similar para tipo "accident"
 }
 ```
+
+**Flujo de la alerta:**
+1. **Persistencia primero:** Se guarda en PostgreSQL para auditoría permanente
+2. **Publicación a Kafka:** Permite que otros microservicios reaccionen a la alerta
+3. **Cache en Redis:** Para consultas rápidas en `/alerts/active` (TTL 10 min)
 
 **¿Qué buscar en caso de error?**
 - Si no genera alertas: Revisar logs `[ANALYZING EVENTS]`, verificar que eventos cumplan condiciones
@@ -180,39 +335,83 @@ private void createAlert(String zone, String alertType, String severity, ...) {
 **Ubicación:** `src/main/java/com/ciudadesinteligentes/correlator/service/AlertService.java`
 
 ```java
-public void saveAlert(CorrelatedAlert alert) {
-    // 1. Convierte CorrelatedAlert → AlertEntity (JPA)
-    // 2. Guarda en PostgreSQL usando AlertRepository
-    // 3. Cachea en Redis con TTL de 24 horas
-}
-
-public List<CorrelatedAlert> getActiveAlerts(String zone) {
-    // 1. Intenta obtener desde Redis (rápido)
-    // 2. Si no existe, consulta PostgreSQL
-    // 3. Filtra por zona si se proporciona
+@Service
+public class AlertService {
+    @Autowired
+    private AlertRepository alertRepository;
+    
+    @Autowired
+    private KafkaTemplate<String, Object> kafkaTemplate;
+    
+    @Autowired
+    private ObjectMapper objectMapper;
+    
+    public AlertEntity saveAlert(CorrelatedAlert alert) {
+        // 1. Mapear CorrelatedAlert → AlertEntity
+        AlertEntity entity = mapToEntity(alert);
+        
+        // 2. Guardar en PostgreSQL
+        return alertRepository.save(entity);
+    }
+    
+    private AlertEntity mapToEntity(CorrelatedAlert alert) {
+        AlertEntity entity = new AlertEntity();
+        
+        // Convertir String UUID a tipo UUID
+        entity.setAlertId(UUID.fromString(alert.alert_id));
+        entity.setCorrelationId(UUID.fromString(alert.correlation_id));
+        
+        entity.setType(alert.type);
+        entity.setScore(alert.score);
+        entity.setZone(alert.zone);
+        
+        // Parsear ventana temporal
+        entity.setWindowStart(OffsetDateTime.parse(alert.window.get("start")));
+        entity.setWindowEnd(OffsetDateTime.parse(alert.window.get("end")));
+        
+        // Serializar evidencia como JSON
+        entity.setEvidence(objectMapper.writeValueAsString(alert.evidence));
+        
+        entity.setCreatedAt(OffsetDateTime.parse(alert.created_at));
+        
+        return entity;
+    }
 }
 ```
 
-**Estructura de la tabla `alerts`:**
+**Estructura REAL de la tabla `alerts`:**
 
 ```sql
 CREATE TABLE alerts (
-    id BIGSERIAL PRIMARY KEY,
-    alert_id VARCHAR(255) UNIQUE,
-    zone VARCHAR(255),
-    alert_type VARCHAR(255),
-    severity VARCHAR(50),
-    event_count INTEGER,
-    description TEXT,
-    timestamp TIMESTAMP,
-    created_at TIMESTAMP DEFAULT NOW()
+    alert_id UUID PRIMARY KEY,                    -- UUID, no BIGSERIAL
+    correlation_id UUID,                          -- UUID para trazabilidad
+    type VARCHAR(255) NOT NULL,                   -- "possible_robbery", "accident"
+    score DOUBLE PRECISION,                       -- Confianza de la correlación (0.0-1.0)
+    zone VARCHAR(255),                            -- "Norte", "Centro", etc.
+    window_start TIMESTAMP WITH TIME ZONE,        -- Inicio de ventana temporal
+    window_end TIMESTAMP WITH TIME ZONE,          -- Fin de ventana temporal
+    evidence JSONB,                               -- Array de event_ids como JSON
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL  -- Momento de creación
 );
+
+CREATE INDEX idx_alerts_zone ON alerts(zone);
+CREATE INDEX idx_alerts_type ON alerts(type);
+CREATE INDEX idx_alerts_created_at ON alerts(created_at DESC);
 ```
+
+**Diferencias clave con la documentación anterior:**
+- **alert_id es UUID:** No es autoincremental, se genera en Java con `UUID.randomUUID()`
+- **correlation_id:** Permite rastrear alertas relacionadas (mismo `correlation_id` del evento)
+- **score:** Nivel de confianza de la correlación (0.85 = 85%)
+- **window_start/end:** Rango temporal de los eventos correlacionados
+- **evidence JSONB:** Lista de `event_id` que generaron la alerta
+- **Sin severity ni event_count:** Se calcula dinámicamente basado en `type` y `evidence`
 
 **¿Qué buscar en caso de error?**
 - Si no persiste: Verificar que PostgreSQL esté corriendo (`docker ps`)
-- Si no cachea: Verificar Redis (`redis-cli ping`)
-- Logs: `[ALERT SAVED]` en consola
+- Si error de UUID: Verificar que `alert_id` y `correlation_id` sean UUIDs válidos
+- Si error de JSONB: Verificar que PostgreSQL soporte tipo JSONB (versión 9.4+)
+- Logs: `Caused by: org.postgresql.util.PSQLException` indica error de BD
 
 ---
 
@@ -220,21 +419,17 @@ CREATE TABLE alerts (
 
 **Ubicación:** `src/main/java/com/ciudadesinteligentes/correlator/controller/ManagementController.java`
 
-Este controlador expone tres endpoints REST:
+Este controlador expone **4 endpoints REST**:
 
 #### 1. Health Check
 ```
 GET http://localhost:8080/health
 ```
 **Respuesta:**
-```json
-{
-  "status": "UP",
-  "service": "Correlator",
-  "timestamp": "2025-10-01T10:30:00Z"
-}
 ```
-**Uso:** Verificar que el microservicio está corriendo.
+"OK"
+```
+**Uso:** Verificar que el microservicio está corriendo (respuesta simple en texto plano).
 
 #### 2. Métricas del Sistema
 ```
@@ -243,15 +438,15 @@ GET http://localhost:8080/metrics
 **Respuesta:**
 ```json
 {
-  "eventsProcessed": 1247,
-  "alertsGenerated": 8,
-  "uptime": "2h 15m",
-  "status": "HEALTHY"
+  "alerts": 0,
+  "events": 0
 }
 ```
-**Uso:** Monitoreo de rendimiento.
+**Uso:** Endpoint básico para monitoreo. Actualmente devuelve valores estáticos (puede extenderse con Spring Boot Actuator).
 
-#### 3. Alertas Activas por Zona
+> **Nota:** Para métricas reales de producción, considerar agregar contadores manuales o habilitar Spring Boot Actuator.
+
+#### 3. Alertas Activas por Zona (desde Redis)
 ```
 GET http://localhost:8080/alerts/active?zone=Norte
 ```
@@ -259,22 +454,66 @@ GET http://localhost:8080/alerts/active?zone=Norte
 ```json
 [
   {
-    "alertId": "alert-uuid-1234",
+    "alert_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+    "correlation_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+    "type": "possible_robbery",
+    "score": 0.85,
     "zone": "Norte",
-    "alertType": "possible_robbery",
-    "severity": "MEDIUM",
-    "eventCount": 3,
-    "description": "Patrón sospechoso detectado...",
-    "timestamp": "2025-10-01T10:25:00Z"
+    "window": {
+      "start": "2025-10-01T10:23:00Z",
+      "end": "2025-10-01T10:25:00Z"
+    },
+    "evidence": [
+      "a1b2c3d4-0001-4001-8001-111111111111",
+      "b2c3d4e5-0002-4002-8002-222222222222"
+    ],
+    "created_at": "2025-10-01T10:25:15Z"
   }
 ]
 ```
-**Uso:** Grafana consulta este endpoint para mostrar alertas en dashboards.
+**Características:**
+- **Fuente:** Redis (lista `alerts:active:{zone}`)
+- **TTL:** 10 minutos (alertas recientes)
+- **Uso:** Dashboards en tiempo real, notificaciones urgentes
+- **Parámetro obligatorio:** `zone` (ejemplo: `Norte`, `Centro`, `Sur`)
+
+#### 4. Alertas Históricas por Zona (desde PostgreSQL)
+```
+GET http://localhost:8080/alerts/db?zone=Norte
+```
+**Respuesta:**
+```json
+[
+  {
+    "alertId": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+    "correlationId": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+    "type": "possible_robbery",
+    "score": 0.85,
+    "zone": "Norte",
+    "windowStart": "2025-10-01T10:23:00Z",
+    "windowEnd": "2025-10-01T10:25:00Z",
+    "evidence": "[\"a1b2c3d4-0001-4001-8001-111111111111\",\"b2c3d4e5-0002-4002-8002-222222222222\"]",
+    "createdAt": "2025-10-01T10:25:15Z"
+  }
+]
+```
+**Características:**
+- **Fuente:** PostgreSQL (tabla `alerts`)
+- **Persistencia:** Permanente (auditoría completa)
+- **Uso:** Análisis histórico, reportes, Grafana
+- **Parámetro opcional:** `zone` (si se omite, devuelve todas las alertas)
+
+**Ejemplo sin filtro:**
+```bash
+curl http://localhost:8080/alerts/db
+# Devuelve TODAS las alertas de todas las zonas
+```
 
 **¿Qué buscar en caso de error?**
-- Si no responde: Verificar puerto 8080 (`docker ps`)
-- Si devuelve vacío: Revisar que existan alertas en PostgreSQL (`SELECT * FROM alerts;`)
-- Logs: `[REST API]` en consola
+- Si no responde: Verificar puerto 8080 (`docker ps | grep correlator`)
+- Si `/alerts/active` devuelve vacío: Verificar Redis (`docker exec -it redis redis-cli KEYS "alerts:active:*"`)
+- Si `/alerts/db` devuelve vacío: Verificar PostgreSQL (`docker exec -it postgres psql -U ciudad_user -d ciudad_inteligente -c "SELECT * FROM alerts;"`)
+- Si error 500: Revisar logs del correlator (`docker logs correlator`)
 
 ---
 
@@ -315,26 +554,124 @@ public class CorrelatedAlert {
 }
 ```
 
-#### 3. AlertEntity.java
+#### 3. EventSummary.java
+**Ubicación:** `src/main/java/com/ciudadesinteligentes/correlator/model/EventSummary.java`
+
+Resumen ligero de evento para Redis:
+```java
+public class EventSummary {
+    private String event_type;           // Tipo de evento
+    private String timestamp;            // Timestamp ISO 8601
+    private Map<String, Object> payload; // Payload completo
+    private String event_id;             // ID del evento
+    
+    public EventSummary(String event_type, String timestamp, 
+                        Map<String, Object> payload, String event_id) {
+        this.event_type = event_type;
+        this.timestamp = timestamp;
+        this.payload = payload;
+        this.event_id = event_id;
+    }
+    
+    // Getters y setters
+}
+```
+
+**¿Por qué EventSummary y no CanonicalEvent?**
+- **Optimización de memoria:** Solo guarda campos necesarios para correlación
+- **Menor latencia:** Serialización/deserialización más rápida en Redis
+- **Flexibilidad:** Puede incluir campos calculados o derivados
+
+#### 4. CorrelatedAlert.java
+**Ubicación:** `src/main/java/com/ciudadesinteligentes/correlator/model/CorrelatedAlert.java`
+
+Representa una alerta generada por correlación:
+```java
+public class CorrelatedAlert {
+    public String alert_id;                 // UUID generado (UUID.randomUUID())
+    public String correlation_id;           // Del evento o nuevo UUID
+    public String type;                     // "possible_robbery", "accident"
+    public double score;                    // Confianza (0.0-1.0), típicamente 0.85
+    public String zone;                     // Zona geográfica
+    public Map<String, String> window;      // {"start": "...", "end": "..."}
+    public List<String> evidence;           // Lista de event_ids
+    public String created_at;               // Timestamp ISO 8601
+}
+```
+
+**Ejemplo completo:**
+```json
+{
+  "alert_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "correlation_id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+  "type": "possible_robbery",
+  "score": 0.85,
+  "zone": "Norte",
+  "window": {
+    "start": "2025-10-01T10:23:00Z",
+    "end": "2025-10-01T10:25:00Z"
+  },
+  "evidence": [
+    "a1b2c3d4-0001-4001-8001-111111111111",
+    "b2c3d4e5-0002-4002-8002-222222222222"
+  ],
+  "created_at": "2025-10-01T10:25:15.123Z"
+}
+```
+
+#### 5. AlertEntity.java
 **Ubicación:** `src/main/java/com/ciudadesinteligentes/correlator/model/AlertEntity.java`
 
 Entidad JPA para persistencia en PostgreSQL:
 ```java
 @Entity
 @Table(name = "alerts")
+@Data
 public class AlertEntity {
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @Column(name = "alert_id", nullable = false)
+    private UUID alertId;                    // UUID como PK (no autoincremental)
     
-    @Column(unique = true, nullable = false)
-    private String alertId;
+    @Column(name = "correlation_id")
+    private UUID correlationId;              // UUID para rastreo
     
-    private String zone;
-    private String alertType;
-    // ... otros campos mapeados a columnas de la tabla
+    @Column(name = "type", nullable = false)
+    private String type;                     // Tipo de alerta
+    
+    @Column(name = "score")
+    private Double score;                    // Nivel de confianza
+    
+    @Column(name = "zone")
+    private String zone;                     // Zona geográfica
+    
+    @Column(name = "window_start")
+    private OffsetDateTime windowStart;      // Inicio ventana temporal
+    
+    @Column(name = "window_end")
+    private OffsetDateTime windowEnd;        // Fin ventana temporal
+    
+    @Column(name = "evidence", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String evidence;                 // JSON array de event_ids
+    
+    @Column(name = "created_at", nullable = false)
+    private OffsetDateTime createdAt;        // Timestamp de creación
 }
 ```
+
+**Mapeo: CorrelatedAlert → AlertEntity**
+
+| Campo CorrelatedAlert | Campo AlertEntity | Transformación |
+|----------------------|-------------------|----------------|
+| `alert_id` (String) | `alertId` (UUID) | `UUID.fromString()` |
+| `correlation_id` (String) | `correlationId` (UUID) | `UUID.fromString()` |
+| `type` | `type` | Directo |
+| `score` | `score` | Directo (double → Double) |
+| `zone` | `zone` | Directo |
+| `window["start"]` | `windowStart` | `OffsetDateTime.parse()` |
+| `window["end"]` | `windowEnd` | `OffsetDateTime.parse()` |
+| `evidence` (List) | `evidence` (String) | `ObjectMapper.writeValueAsString()` |
+| `created_at` | `createdAt` | `OffsetDateTime.parse()` |
 
 ---
 
@@ -849,6 +1186,36 @@ curl http://localhost:8080/metrics
 # Obtener alertas activas
 curl "http://localhost:8080/alerts/active?zone=Norte"
 ```
+
+---
+
+## Mejoras Futuras Recomendadas
+
+### 🛡️ Hardening de Serialización JSON
+
+**Contexto:** Actualmente la serialización JSON funciona correctamente porque todos los campos obligatorios (`alert_id`, `correlation_id`, `type`) siempre tienen valores asignados. Sin embargo, para fortalecer el código contra modificaciones futuras, se recomienda:
+
+**1. Agregar `@JsonInclude(NON_NULL)` a `CorrelatedAlert`**
+```java
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public class CorrelatedAlert {
+    // ...campos
+}
+```
+**Beneficio:** Evita que campos opcionales con valor `null` se incluyan en JSON al publicar a Kafka.
+
+**2. Configurar `RedisTemplateConfig` con ObjectMapper personalizado**
+```java
+@Bean
+public GenericJackson2JsonRedisSerializer jsonSerializer() {
+    ObjectMapper mapper = new ObjectMapper()
+        .setSerializationInclusion(JsonInclude.Include.NON_NULL);
+    return new GenericJackson2JsonRedisSerializer(mapper);
+}
+```
+**Beneficio:** Evita guardar campos `null` en Redis, manteniendo datos más limpios.
+
+**Impacto:** Ninguno en el comportamiento actual (defensa en profundidad para cambios futuros).
 
 ---
 
