@@ -1,6 +1,7 @@
 package com.ciudadesinteligentes.ingestor.model;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import lombok.Data;
 import jakarta.validation.constraints.NotNull;
 import java.util.Map;
@@ -30,7 +31,8 @@ public class CanonicalEvent {
     @JsonProperty("trace_id")
     private String traceId;
     
-    // Campo opcional para datos específicos del evento
+    // Campo obligatorio para datos específicos del evento
+    @NotNull
     @JsonProperty("payload")
     private Map<String, Object> data;
     
@@ -38,19 +40,24 @@ public class CanonicalEvent {
     @JsonProperty("partition_key")
     private String partitionKey;
     
+    @NotNull
     @JsonProperty("geo")
     private Geo geo;
     
+    @NotNull
     @JsonProperty("severity")
     private String severity;
     
+    @NotNull
     @JsonProperty("producer")
     private String producer;
     
+    @NotNull
     @JsonProperty("event_version")
     private String eventVersion;
 
     @Data
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class Geo {
         @JsonProperty("lat")
         private Double lat;
@@ -58,6 +65,7 @@ public class CanonicalEvent {
         @JsonProperty("lon")
         private Double lon;
         
+        @NotNull
         @JsonProperty("zone")
         private String zone;
     }

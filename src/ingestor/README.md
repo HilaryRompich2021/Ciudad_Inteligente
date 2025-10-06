@@ -39,7 +39,7 @@ ingestor.kafka.topic=<TOPIC_DESTINO>
 **Ejemplo:**
 ```properties
 spring.kafka.bootstrap-servers=localhost:9092
-ingestor.kafka.topic=t01.events.standardized
+ingestor.kafka.topic=events.standardized
 ```
 
 También puede usar variables de entorno al ejecutar el JAR:
@@ -47,11 +47,11 @@ También puede usar variables de entorno al ejecutar el JAR:
 ```bash
 # Linux/Mac
 export SPRING_KAFKA_BOOTSTRAP_SERVERS=localhost:9092
-export INGESTOR_KAFKA_TOPIC=t01.events.standardized
+export INGESTOR_KAFKA_TOPIC=events.standardized
 
 # Windows (PowerShell)
 $env:SPRING_KAFKA_BOOTSTRAP_SERVERS="localhost:9092"
-$env:INGESTOR_KAFKA_TOPIC="t01.events.standardized"
+$env:INGESTOR_KAFKA_TOPIC="events.standardized"
 ```
 
 ---
@@ -72,7 +72,7 @@ java -jar target/ingestor-0.0.1-SNAPSHOT.jar
 ```
 Started IngestorApplication in 3.456 seconds
 Kafka bootstrap servers: localhost:9092
-Publishing to topic: t01.events.standardized
+Publishing to topic: events.standardized
 ```
 
 ---
@@ -355,7 +355,7 @@ Después de enviar eventos, puedes verificar en Kafka:
 # Consumir mensajes del topic (si tienes acceso a Kafka CLI)
 kafka-console-consumer.sh \
   --bootstrap-server localhost:9092 \
-  --topic t01.events.standardized \
+  --topic events.standardized \
   --from-beginning
 ```
 

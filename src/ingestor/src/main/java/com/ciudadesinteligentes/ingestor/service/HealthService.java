@@ -10,7 +10,7 @@ import java.util.Map;
 @Service
 public class HealthService {
     
-    private static final String TOPIC = "t01.events.standardized";
+    private static final String TOPIC = "events.standardized";
     private final KafkaTemplate<?, ?> kafkaTemplate;
     private final CanonicalEventValidator validator;
 

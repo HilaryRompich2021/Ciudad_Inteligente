@@ -21,7 +21,7 @@ public class EventService {
     private final CanonicalEventValidator validator;
     private final EventEnricher eventEnricher;
     private final EventRepository eventRepository;
-    private static final String TOPIC = "t01.events.standardized";
+    private static final String TOPIC = "events.standardized";
 
     @Autowired
     public EventService(KafkaTemplate<String, CanonicalEvent> kafkaTemplate,
@@ -45,18 +45,26 @@ public class EventService {
         String eventJson = objectMapper.writeValueAsString(event);
         validator.validate(eventJson); // Validación estricta según el esquema
 
-        // Persistir el evento en la base de datos
+        // VALIDACIÓN DE DUPLICADOS: verificar si el event_id ya existe
+        UUID eventId = UUID.fromString(event.getEventId());
+        if (eventRepository.existsById(eventId)) {
+            throw new IllegalArgumentException("Duplicate event_id rejected: " + eventId + " - Event already processed");
+        }
+
+        // Persistir el evento en la base de datos ANTES de publicar a Kafka
+        // (Evita inconsistencias: si falla BD, no publicamos a Kafka)
         EventEntity entity = mapToEntity(event);
         eventRepository.save(entity);
 
         // Logs informativos
+        System.out.println("Event persisted to database: " + event.getEventId());
         System.out.println("Publishing event to Kafka topic: " + TOPIC);
-        System.out.println("Event ID: " + event.getEventId());
         System.out.println("Event Type: " + event.getEventType());
 
         // Usar eventId como clave si partitionKey es null
         String key = event.getPartitionKey() != null ? event.getPartitionKey() : event.getEventId();
 
+        // Publicar a Kafka SOLO si la persistencia en BD fue exitosa
         kafkaTemplate.send(TOPIC, key, event)
             .whenComplete((result, ex) -> {
                 if (ex == null) {
