@@ -1,7 +1,14 @@
 package com.ciudadesinteligentes.correlator.model;
-
 import java.util.Map;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
+/**
+ * Representa un evento canónico en el sistema
+ * Estructura estándar para eventos entrantes
+ */
+@Data
+@NoArgsConstructor
 public class CanonicalEvent {
     public String event_version;
     public String event_type;

@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import com.ciudadesinteligentes.correlator.util.CanonicalEventValidator;
 import javax.annotation.PostConstruct;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import org.springframework.beans.factory.annotation.Autowired;
 import java.nio.file.Files;
 import java.nio.file.Paths;
@@ -15,7 +16,8 @@ import java.nio.file.Paths;
 @Component
 public class EventConsumer {
     private CanonicalEventValidator validator;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = new ObjectMapper()
+        .setSerializationInclusion(JsonInclude.Include.NON_NULL);
 
     @Autowired
     private com.ciudadesinteligentes.correlator.service.CorrelatorService correlatorService;
@@ -32,7 +34,7 @@ public class EventConsumer {
         }
     }
 
-    @KafkaListener(topics = "t01.events.standardized", groupId = "correlator-group")
+    @KafkaListener(topics = "events.standardized", groupId = "correlator-group")
     public void consume(CanonicalEvent event) {
         try {
             validator.validate(event);
