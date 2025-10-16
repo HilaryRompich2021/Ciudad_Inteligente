@@ -8,6 +8,10 @@ services:
       - SPRING_KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:29092
       - SPRING_REDIS_HOST=host.docker.internal
       - SPRING_REDIS_PORT=6379
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://host.docker.internal:5432/ciudades
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://platform-postgres-1:5432/ciudades
       - SPRING_DATASOURCE_USERNAME=postgres
       - SPRING_DATASOURCE_PASSWORD=postgres
+networks:
+  default:
+    external:
+      name: platform_default

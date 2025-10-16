@@ -10,6 +10,8 @@ import java.time.OffsetDateTime;
 
 @Service
 public class AlertService {
+
+    
     private final AlertRepository alertRepository;
     private final ObjectMapper objectMapper;
 
