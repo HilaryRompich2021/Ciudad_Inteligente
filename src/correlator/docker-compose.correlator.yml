@@ -1,4 +1,4 @@
-version: "3.8"
+
 
 services:
   correlator:
@@ -10,11 +10,12 @@ services:
       - SPRING_KAFKA_BOOTSTRAP_SERVERS=platform-kafka-1:9092
       - SPRING_REDIS_HOST=platform-redis-1
       - SPRING_REDIS_PORT=6379
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://platform-postgres-1:5432/ciudades
-      - SPRING_DATASOURCE_USERNAME=postgres
-      - SPRING_DATASOURCE_PASSWORD=postgres
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://arqui-pg.postgres.database.azure.com:5432/test_events?sslmode=require
+      - SPRING_DATASOURCE_USERNAME=grupo3
+      - SPRING_DATASOURCE_PASSWORD=4rqu1.4pp
     volumes:
       - ./src/main/resources/application.yml:/app/resources/application.yml
+
     networks:
       - platform_default
 

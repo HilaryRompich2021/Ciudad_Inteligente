@@ -1,5 +1,6 @@
 
 version: "3.8"
+
 services:
   zookeeper:
     image: bitnami/zookeeper:3.8
@@ -37,41 +38,17 @@ services:
     ports:
       - "6379:6379"
 
-  postgres:
-    image: postgres:16
-    environment:
-      - POSTGRES_DB=ciudades
-      - POSTGRES_PASSWORD=postgres
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-      - ../db:/docker-entrypoint-initdb.d
-
-  kafka-init:
-    image: bitnami/kafka:3.7
-    depends_on:
-      - kafka
-    volumes:
-      - ../scripts/create-topics.sh:/create-topics.sh
-    entrypoint: ["/bin/bash", "-c", "sleep 10 && bash /create-topics.sh"]
-
   grafana:
     image: grafana/grafana:latest
-    depends_on:
-      - postgres
     ports:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_INSTALL_PLUGINS=
+      - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
 
 volumes:
-  pgdata:
   grafana-data:
-
-

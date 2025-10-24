@@ -14,33 +14,22 @@ default_args = {
 with DAG(
     dag_id='etl_analytics_dag',
     default_args=default_args,
-    description='ETL programado: genera métricas de alertas por zona y tipo de evento',
-    schedule_interval='*/10 * * * *',  # cada 10 minutos
-    start_date=datetime(2025, 10, 10),
+    description='Lectura y conteo de alertas por zona desde Azure PostgreSQL',
+    schedule_interval='*/15 * * * *',  # cada 15 min
+    start_date=datetime(2025, 10, 21),
     catchup=False,
-    tags=['etl', 'analytics', 'ciudad-inteligente'],
+    tags=['etl', 'analytics', 'read-only'],
 ) as dag:
 
-    # Limpia registros antiguos (opcional)
-    clear_old_data = PostgresOperator(
-        task_id='clear_old_data',
+    read_alerts = PostgresOperator(
+        task_id='read_alerts',
         postgres_conn_id='postgres_default',
         sql="""
-            DELETE FROM analytics_results
-            WHERE generated_at < NOW() - INTERVAL '1 day';
-        """,
-    )
-
-    # Inserta nuevas métricas agrupadas
-    aggregate_alerts = PostgresOperator(
-        task_id='aggregate_alerts',
-        postgres_conn_id='postgres_default',
-        sql="""
-            INSERT INTO analytics_results (event_type, zone, alert_count)
             SELECT type AS event_type, zone, COUNT(*) AS alert_count
             FROM alerts
+            WHERE created_at > NOW() - INTERVAL '1 HOUR'
             GROUP BY type, zone;
         """,
     )
 
-    clear_old_data >> aggregate_alerts
+    read_alerts

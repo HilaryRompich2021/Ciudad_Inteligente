@@ -444,7 +444,7 @@ Content-Type: application/json
   "correlation_id": "e2e3e4e5-0001-4001-8001-100000000001",
   "trace_id": "e3e4e5e6-0001-4001-8001-200000000001",
   "timestamp": "2025-10-01T15:00:00Z",
-  "partition_key": "zone_1",
+  "partition_key": "panic.button",
   "geo": {
     "zone": "zone_1",
     "lat": 14.62,
@@ -475,7 +475,7 @@ Content-Type: application/json
   "correlation_id": "e2e3e4e5-0001-4001-8001-100000000001",
   "trace_id": "e3e4e5e6-0002-4002-8002-200000000002",
   "timestamp": "2025-10-01T15:01:00Z",
-  "partition_key": "zone_1",
+  "partition_key": "sensor.lpr",
   "geo": {
     "zone": "zone_1",
     "lat": 14.62,
@@ -547,7 +547,7 @@ Content-Type: application/json
   "correlation_id": "e2e3e4e5-0002-4002-8002-100000000002",
   "trace_id": "e3e4e5e6-0003-4003-8003-200000000003",
   "timestamp": "2025-10-01T15:10:00Z",
-  "partition_key": "zone_2",
+  "partition_key": "citizen.report",
   "geo": {
     "zone": "zone_2",
     "lat": 14.63,
@@ -578,7 +578,7 @@ Content-Type: application/json
   "correlation_id": "e2e3e4e5-0002-4002-8002-100000000002",
   "trace_id": "e3e4e5e6-0004-4004-8004-200000000004",
   "timestamp": "2025-10-01T15:12:00Z",
-  "partition_key": "zone_2",
+  "partition_key": "sensor.acoustic",
   "geo": {
     "zone": "zone_2",
     "lat": 14.63,

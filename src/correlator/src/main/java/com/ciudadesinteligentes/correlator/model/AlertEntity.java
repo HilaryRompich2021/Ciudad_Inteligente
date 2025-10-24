@@ -13,16 +13,16 @@ import java.time.OffsetDateTime;
 public class AlertEntity {
     @Id
     @Column(name = "alert_id", nullable = false)
-    private UUID alertId;
+    private String alertId;
 
     @Column(name = "correlation_id")
-    private UUID correlationId;
+    private String correlationId;
 
     @Column(name = "type", nullable = false)
     private String type;
 
     @Column(name = "score")
-    private Double score;
+    private Integer score;
 
     @Column(name = "zone")
     private String zone;
@@ -33,9 +33,12 @@ public class AlertEntity {
     @Column(name = "window_end")
     private OffsetDateTime windowEnd;
 
-    @Column(name = "evidence", columnDefinition = "jsonb")
+    /*@Column(name = "evidence", columnDefinition = "jsonb")
     @JdbcTypeCode(SqlTypes.JSON)
+    private String evidence;*/
+    @Column(name = "evidence", columnDefinition = "jsonb")
     private String evidence;
+
 
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;

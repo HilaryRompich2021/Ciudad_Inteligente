@@ -5,13 +5,13 @@ import com.ciudadesinteligentes.correlator.model.CorrelatedAlert;
 import com.ciudadesinteligentes.correlator.repository.AlertRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;  
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.OffsetDateTime;
 
 @Service
 public class AlertService {
 
-    
     private final AlertRepository alertRepository;
     private final ObjectMapper objectMapper;
 
@@ -21,30 +21,48 @@ public class AlertService {
         this.objectMapper = objectMapper;
     }
 
+    @Transactional  //  fuerza commit en cada inserción
     public AlertEntity saveAlert(CorrelatedAlert alert) {
+        System.out.println(">>> [DEBUG] Intentando guardar alerta con ID: " + alert.alert_id);
         AlertEntity entity = mapToEntity(alert);
+        System.out.println(">>> [DEBUG] AlertEntity construida: " + entity);
         return alertRepository.save(entity);
     }
 
-    // Mapper manual de CorrelatedAlert a AlertEntity
     private AlertEntity mapToEntity(CorrelatedAlert alert) {
         AlertEntity entity = new AlertEntity();
-        // Convertir String a UUID
-        entity.setAlertId(alert.alert_id != null ? java.util.UUID.fromString(alert.alert_id) : null);
-        entity.setCorrelationId(alert.correlation_id != null ? java.util.UUID.fromString(alert.correlation_id) : null);
+
+        //  Mejor usar String, no UUID (para coincidir con DB)
+        entity.setAlertId(alert.alert_id);
+        entity.setCorrelationId(alert.correlation_id);
+
         entity.setType(alert.type);
-        entity.setScore(alert.score);
+        entity.setScore((int) Math.round(alert.score));
         entity.setZone(alert.zone);
-        // Convertir String a OffsetDateTime para window
-        entity.setWindowStart(alert.window != null && alert.window.containsKey("start") && alert.window.get("start") != null ? java.time.OffsetDateTime.parse(alert.window.get("start")) : null);
-        entity.setWindowEnd(alert.window != null && alert.window.containsKey("end") && alert.window.get("end") != null ? java.time.OffsetDateTime.parse(alert.window.get("end")) : null);
+
+        entity.setWindowStart(
+            alert.window != null && alert.window.get("start") != null
+                ? OffsetDateTime.parse(alert.window.get("start"))
+                : null
+        );
+        entity.setWindowEnd(
+            alert.window != null && alert.window.get("end") != null
+                ? OffsetDateTime.parse(alert.window.get("end"))
+                : null
+        );
+
         try {
             entity.setEvidence(objectMapper.writeValueAsString(alert.evidence));
         } catch (Exception e) {
             entity.setEvidence("[]");
         }
-        // Convertir String a OffsetDateTime para created_at
-        entity.setCreatedAt(alert.created_at != null ? java.time.OffsetDateTime.parse(alert.created_at) : java.time.OffsetDateTime.now());
+
+        entity.setCreatedAt(
+            alert.created_at != null
+                ? OffsetDateTime.parse(alert.created_at)
+                : OffsetDateTime.now()
+        );
+
         return entity;
     }
 }
