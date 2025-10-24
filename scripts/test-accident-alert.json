@@ -1,0 +1,47 @@
+[
+  {
+    "event_version": "1.0",
+    "event_type": "citizen.report",
+    "event_id": "accident-citizen-001",
+    "producer": "test",
+    "source": "simulated",
+    "correlation_id": "accident-test-001",
+    "trace_id": "accident-trace-001",
+    "timestamp": "2025-10-18T11:00:00.000Z",
+    "partition_key": "citizen.report",
+    "geo": {
+      "zone": "zone_test",
+      "lat": 14.62,
+      "lon": -90.52
+    },
+    "severity": "warning",
+    "payload": {
+      "tipo_evento": "accidente",
+      "mensaje_descriptivo": "Colisión múltiple en intersección",
+      "ubicacion_aproximada": "zone_test",
+      "origen": "usuario"
+    }
+  },
+  {
+    "event_version": "1.0",
+    "event_type": "sensor.acoustic",
+    "event_id": "accident-acoustic-001",
+    "producer": "test",
+    "source": "simulated",
+    "correlation_id": "accident-test-002",
+    "trace_id": "accident-trace-002",
+    "timestamp": "2025-10-18T11:02:00.000Z",
+    "partition_key": "sensor.acoustic",
+    "geo": {
+      "zone": "zone_test",
+      "lat": 14.62,
+      "lon": -90.52
+    },
+    "severity": "critical",
+    "payload": {
+      "tipo_sonido_detectado": "vidrio_roto",
+      "nivel_decibeles": 105,
+      "probabilidad_evento_critico": 0.88
+    }
+  }
+]

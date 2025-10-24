@@ -1,3 +1,6 @@
+### test para wsl y docker ce
+/scripts/bulk-burst-test.py
+
 # Personal technical documentation (not for public repo)
 INGESTOR_TECHNICAL_GUIDE.md
 arquitectura.png

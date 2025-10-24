@@ -1,0 +1,127 @@
+config:
+  target: "http://host.docker.internal:8000"
+  phases:
+    - duration: 10
+      arrivalRate: 100  # 100 requests per second for 10 seconds (burst)
+  defaults:
+    headers:
+      content-type: application/json
+scenarios:
+  - name: panic-button
+    flow:
+      - post:
+          url: "/events"
+          json:
+            event_version: "1.0"
+            event_type: "panic.button"
+            event_id: "{{ $uuid }}"
+            producer: "artillery"
+            source: "simulated"
+            correlation_id: "{{ $uuid }}"
+            trace_id: "{{ $uuid }}"
+            timestamp: "{{ $isoDate }}"
+            partition_key: "panic.button"
+            geo:
+              zone: "zone_4"
+              lat: 14.62
+              lon: -90.52
+            severity: "critical"
+            payload:
+              tipo_de_alerta: "panico"
+              identificador_dispositivo: "BTN-001"
+              user_context: "movil"
+  - name: lpr-camera
+    flow:
+      - post:
+          url: "/events"
+          json:
+            event_version: "1.0"
+            event_type: "sensor.lpr"
+            event_id: "{{ $uuid }}"
+            producer: "artillery"
+            source: "simulated"
+            correlation_id: "{{ $uuid }}"
+            trace_id: "{{ $uuid }}"
+            timestamp: "{{ $isoDate }}"
+            partition_key: "sensor.lpr"
+            geo:
+              zone: "zone_4"
+              lat: 14.62
+              lon: -90.52
+            severity: "info"
+            payload:
+              placa_vehicular: "XYZ123"
+              velocidad_estimada: 85
+              modelo_vehiculo: "sedan"
+              color_vehiculo: "rojo"
+              ubicacion_sensor: "blvd_las_americas_01"
+  - name: speed-motion
+    flow:
+      - post:
+          url: "/events"
+          json:
+            event_version: "1.0"
+            event_type: "sensor.speed"
+            event_id: "{{ $uuid }}"
+            producer: "artillery"
+            source: "simulated"
+            correlation_id: "{{ $uuid }}"
+            trace_id: "{{ $uuid }}"
+            timestamp: "{{ $isoDate }}"
+            partition_key: "sensor.speed"
+            geo:
+              zone: "zone_4"
+              lat: 14.62
+              lon: -90.52
+            severity: "warning"
+            payload:
+              velocidad_detectada: 92
+              sensor_id: "SPD-017"
+              direccion: "NORTE"
+  - name: acoustic-ambient
+    flow:
+      - post:
+          url: "/events"
+          json:
+            event_version: "1.0"
+            event_type: "sensor.acoustic"
+            event_id: "{{ $uuid }}"
+            producer: "artillery"
+            source: "simulated"
+            correlation_id: "{{ $uuid }}"
+            trace_id: "{{ $uuid }}"
+            timestamp: "{{ $isoDate }}"
+            partition_key: "sensor.acoustic"
+            geo:
+              zone: "zone_4"
+              lat: 14.62
+              lon: -90.52
+            severity: "critical"
+            payload:
+              tipo_sonido_detectado: "disparo"
+              nivel_decibeles: 112
+              probabilidad_evento_critico: 0.83
+  - name: citizen-report
+    flow:
+      - post:
+          url: "/events"
+          json:
+            event_version: "1.0"
+            event_type: "citizen.report"
+            event_id: "{{ $uuid }}"
+            producer: "artillery"
+            source: "simulated"
+            correlation_id: "{{ $uuid }}"
+            trace_id: "{{ $uuid }}"
+            timestamp: "{{ $isoDate }}"
+            partition_key: "citizen.report"
+            geo:
+              zone: "zona_10"
+              lat: 14.62
+              lon: -90.52
+            severity: "info"
+            payload:
+              tipo_evento: "accidente"
+              mensaje_descriptivo: "vehiculo volcado"
+              ubicacion_aproximada: "zona_10"
+              origen: "usuario"
