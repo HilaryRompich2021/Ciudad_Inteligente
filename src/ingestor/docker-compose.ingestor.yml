@@ -1,22 +1,20 @@
-version: "3.8"
 services:
   ingestor:
     build: .
     ports:
       - "8000:8000"
     environment:
-      - SPRING_KAFKA_BOOTSTRAP_SERVERS=host.docker.internal:29092
-      - SPRING_REDIS_HOST=host.docker.internal
-      - SPRING_REDIS_PORT=6379
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://arqui-pg.postgres.database.azure.com:5432/test_events?sslmode=require
-      - SPRING_DATASOURCE_USERNAME=grupo3
-      - SPRING_DATASOURCE_PASSWORD=4rqu1.4pp
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=${SPRING_KAFKA_BOOTSTRAP_SERVERS}
+      - SPRING_REDIS_HOST=${SPRING_REDIS_HOST}
+      - SPRING_REDIS_PORT=${SPRING_REDIS_PORT}
+      - SPRING_DATASOURCE_URL=${SPRING_DATASOURCE_URL}
+      - SPRING_DATASOURCE_USERNAME=${SPRING_DATASOURCE_USERNAME}
+      - SPRING_DATASOURCE_PASSWORD=${SPRING_DATASOURCE_PASSWORD}
+      - KAFKA_TOPIC_EVENTS_STANDARDIZED=${KAFKA_TOPIC_EVENTS_STANDARDIZED}
+      - SERVER_PORT=${SERVER_PORT}
+    networks:
+      - platform_default
 
-      - SPRING_JPA_PROPERTIES_HIBERNATE_DIALECT=org.hibernate.dialect.PostgreSQLDialect
-      - SPRING_JPA_HIBERNATE_DDL_AUTO=none
-      - SPRING_MAIN_ALLOW_BEAN_DEFINITION_OVERRIDING=true
-      - SPRING_PROFILES_ACTIVE=prod
 networks:
-  default:
-    external:
-      name: platform_default
+  platform_default:
+    external: true

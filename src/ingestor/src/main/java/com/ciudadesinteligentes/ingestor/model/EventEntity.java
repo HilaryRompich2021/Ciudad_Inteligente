@@ -15,8 +15,7 @@ import org.hibernate.annotations.Type;
 public class EventEntity {
     @Id
     @Column(name = "event_id", nullable = false)
-    //private UUID eventId;
-    private String eventId;
+    private UUID eventId;
 
     @Column(name = "event_type", nullable = false)
     private String eventType;
@@ -31,10 +30,10 @@ public class EventEntity {
     private String source;
 
     @Column(name = "correlation_id")
-    private String correlationId;
+    private UUID correlationId;
 
     @Column(name = "trace_id")
-    private String traceId;
+    private UUID traceId;
 
     @Column(name = "partition_key", nullable = false)
     private String partitionKey;
@@ -48,7 +47,7 @@ public class EventEntity {
     @Column(name = "geo_lat")
     private Double geoLat;
 
-    @Column(name = "geo_long")
+    @Column(name = "geo_lon")
     private Double geoLon;
 
     @Column(name = "severity")

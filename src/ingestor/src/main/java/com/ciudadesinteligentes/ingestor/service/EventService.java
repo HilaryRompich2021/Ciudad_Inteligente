@@ -6,6 +6,8 @@ import com.ciudadesinteligentes.ingestor.model.EventEntity;
 import com.ciudadesinteligentes.ingestor.repository.EventRepository;
 import com.ciudadesinteligentes.ingestor.util.CanonicalEventValidator;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.MapperFeature;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -30,11 +32,15 @@ public class EventService {
                         CanonicalEventValidator validator,
                         EventEnricher eventEnricher,
                         EventRepository eventRepository) {
-        this.kafkaTemplate = kafkaTemplate;
-        this.objectMapper = objectMapper;
-        this.validator = validator;
-        this.eventEnricher = eventEnricher;
-        this.eventRepository = eventRepository;
+           this.kafkaTemplate = kafkaTemplate;
+           this.objectMapper = objectMapper;
+           this.validator = validator;
+           this.eventEnricher = eventEnricher;
+           this.eventRepository = eventRepository;
+
+           // Configurar ObjectMapper para respetar el orden de los campos
+           this.objectMapper.configure(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY, false);
+           this.objectMapper.configure(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS, false);
     }
 
     /**
@@ -49,7 +55,7 @@ public class EventService {
         validator.validate(eventJson);
 
         // VALIDACIÓN DE DUPLICADOS: verificar si el event_id ya existe
-        String eventId = event.getEventId();
+        UUID eventId = event.getEventId();
         if (eventRepository.existsById(eventId)) {
             throw new IllegalArgumentException("Duplicate event_id rejected: " + eventId + " - Event already processed");
         }
@@ -58,20 +64,22 @@ public class EventService {
         EventEntity entity = mapToEntity(event);
         eventRepository.save(entity);
 
+           
+
         System.out.println(" Event persisted to database: " + event.getEventId());
         System.out.println(" Publishing event to Kafka topic: " + TOPIC);
         System.out.println(" Event Type: " + event.getEventType());
 
-        // Usar eventId como clave si partitionKey es null
-        String key = (event.getPartitionKey() != null) ? event.getPartitionKey() : event.getEventId();
+        // Usar partitionKey como clave para Kafka
+         String key = event.getPartitionKey();
 
         // Publicar a Kafka SOLO si la persistencia fue exitosa
         kafkaTemplate.send(TOPIC, key, event)
             .whenComplete((result, ex) -> {
                 if (ex == null) {
-                    System.out.println("✅ Successfully published event to Kafka: " + result.getRecordMetadata());
+                    System.out.println("Successfully published event to Kafka: " + result.getRecordMetadata());
                 } else {
-                    System.err.println("❌ Failed to publish event to Kafka: " + ex.getMessage());
+                    System.err.println(" Failed to publish event to Kafka: " + ex.getMessage());
                     ex.printStackTrace();
                 }
             });
@@ -82,13 +90,13 @@ public class EventService {
      */
     private EventEntity mapToEntity(CanonicalEvent event) {
         EventEntity entity = new EventEntity();
-        entity.setEventId(event.getEventId()); //  String
+    entity.setEventId(event.getEventId()); // Usar UUID directamente
         entity.setEventType(event.getEventType());
         entity.setEventVersion(event.getEventVersion());
         entity.setProducer(event.getProducer());
         entity.setSource(event.getSource());
-        entity.setCorrelationId(event.getCorrelationId());
-        entity.setTraceId(event.getTraceId());
+        entity.setCorrelationId(event.getCorrelationId() != null ? UUID.fromString(event.getCorrelationId()) : null);
+        entity.setTraceId(event.getTraceId() != null ? UUID.fromString(event.getTraceId()) : null);
         entity.setPartitionKey(event.getPartitionKey());
         entity.setTsUtc(event.getTimestamp() != null ?
                 OffsetDateTime.parse(event.getTimestamp()) : OffsetDateTime.now());
@@ -113,23 +121,22 @@ public class EventService {
      * Procesa múltiples eventos en batch.
      */
     public BulkProcessResult processAndPublishBulk(List<CanonicalEvent> events) {
-        List<String> successfulEvents = new ArrayList<>();
+    List<UUID> successfulEvents = new ArrayList<>();
         List<BulkProcessResult.ProcessingError> failedEvents = new ArrayList<>();
 
         for (int i = 0; i < events.size(); i++) {
             try {
                 CanonicalEvent event = events.get(i);
                 processAndPublish(event);
-                successfulEvents.add(event.getEventId());
+                UUID eventId = event.getEventId();
+                successfulEvents.add(eventId);
             } catch (Exception e) {
-                String eventId = (events.get(i).getEventId() != null)
-                        ? events.get(i).getEventId()
-                        : "unknown";
+                UUID eventId = events.get(i).getEventId();
                 failedEvents.add(new BulkProcessResult.ProcessingError(i, eventId, e.getMessage()));
             }
         }
 
-        System.out.println("📊 Bulk processing completed: " + successfulEvents.size() + "/" + events.size() + " successful");
+        System.out.println("Bulk processing completed: " + successfulEvents.size() + "/" + events.size() + " successful");
 
         return new BulkProcessResult(events.size(), successfulEvents, failedEvents);
     }

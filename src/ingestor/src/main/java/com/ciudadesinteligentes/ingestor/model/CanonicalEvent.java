@@ -1,4 +1,6 @@
+
 package com.ciudadesinteligentes.ingestor.model;
+import java.util.UUID;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -11,7 +13,7 @@ public class CanonicalEvent {
     // Campos obligatorios mínimos
     @NotNull
     @JsonProperty("event_id")
-    private String eventId;
+    private UUID eventId;
 
     @NotNull
     @JsonProperty("event_type")
