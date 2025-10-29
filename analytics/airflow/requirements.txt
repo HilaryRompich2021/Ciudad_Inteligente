@@ -1,0 +1,4 @@
+psycopg2-binary
+apache-airflow-providers-postgres
+apache-airflow-providers-elasticsearch
+apache-airflow-providers-fab

@@ -1,0 +1,50 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": "Elasticsearch-Ciudades",
+      "type": "table",
+      "title": "Evidencia de Alerta",
+      "targets": [
+        {
+          "refId": "A",
+          "query": "alert_id: $alert_id",
+          "alias": "Evidencia",
+          "datasource": "Elasticsearch-Ciudades"
+        }
+      ],
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "options": { "showHeader": true },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
+      "id": 1
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 37,
+  "style": "dark",
+  "tags": ["evidencia", "alertas"],
+  "templating": {
+    "list": [
+      {
+        "name": "alert_id",
+        "type": "query",
+        "datasource": "Elasticsearch-Ciudades",
+        "query": "alert_id.keyword",
+        "refresh": 1,
+        "multi": false,
+        "includeAll": false,
+        "options": [],
+        "current": { "text": "", "value": "" }
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timezone": "browser",
+  "title": "Desglose de Evidencia de Alerta",
+  "version": 1
+}

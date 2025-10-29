@@ -1,0 +1,15 @@
+{
+  "index_patterns": ["alerts-*"] ,
+  "template": {
+    "mappings": {
+      "properties": {
+        "alert_id":   { "type": "keyword" },
+        "type":       { "type": "keyword" },
+        "timestamp":  { "type": "date"    },
+        "geo":        { "type": "geo_point" },
+        "severity":   { "type": "keyword" },
+        "payload":    { "type": "object", "enabled": true }
+      }
+    }
+  }
+}
