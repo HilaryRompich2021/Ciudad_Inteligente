@@ -16,7 +16,7 @@ public class AlertService {
     private final ObjectMapper objectMapper;
 
     @Autowired
-    public AlertService(AlertRepository alertRepository, ObjectMapper objectMapper) {
+    public AlertService(AlertRepository alertRepository, ObjectMapper objectMapper/*, ElasticsearchAlertIndexer elasticsearchAlertIndexer*/) {
         this.alertRepository = alertRepository;
         this.objectMapper = objectMapper;
     }
@@ -26,15 +26,17 @@ public class AlertService {
         System.out.println(">>> [DEBUG] Intentando guardar alerta con ID: " + alert.alert_id);
         AlertEntity entity = mapToEntity(alert);
         System.out.println(">>> [DEBUG] AlertEntity construida: " + entity);
-        return alertRepository.save(entity);
+        AlertEntity saved = alertRepository.save(entity);
+            
+        return saved;
     }
 
     private AlertEntity mapToEntity(CorrelatedAlert alert) {
         AlertEntity entity = new AlertEntity();
 
         //  Mejor usar String, no UUID (para coincidir con DB)
-        entity.setAlertId(alert.alert_id);
-        entity.setCorrelationId(alert.correlation_id);
+    entity.setAlertId(alert.alert_id);
+    entity.setCorrelationId(alert.correlation_id);
 
         entity.setType(alert.type);
         entity.setScore((int) Math.round(alert.score));
@@ -52,9 +54,9 @@ public class AlertService {
         );
 
         try {
-            entity.setEvidence(objectMapper.writeValueAsString(alert.evidence));
+            entity.setEvidence(objectMapper.valueToTree(alert.evidence));
         } catch (Exception e) {
-            entity.setEvidence("[]");
+            entity.setEvidence(objectMapper.createArrayNode());
         }
 
         entity.setCreatedAt(

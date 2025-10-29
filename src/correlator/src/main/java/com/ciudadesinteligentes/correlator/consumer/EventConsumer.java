@@ -37,7 +37,9 @@ public class EventConsumer {
     @KafkaListener(topics = "events.standardized", groupId = "correlator-group")
     public void consume(CanonicalEvent event) {
         try {
+            System.out.println("[EventConsumer] Evento recibido: " + objectMapper.writeValueAsString(event));
             validator.validate(event);
+            System.out.println("[EventConsumer] Evento validado, procesando...");
             correlatorService.processEvent(event);
         } catch (Exception e) {
             System.err.println("Evento inválido o error de procesamiento: " + e.getMessage());

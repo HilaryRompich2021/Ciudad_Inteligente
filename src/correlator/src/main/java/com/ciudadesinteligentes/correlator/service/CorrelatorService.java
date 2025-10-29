@@ -28,16 +28,26 @@ public class CorrelatorService {
 
     // Lógica base: solo ejemplo para "possible_robbery"
     public void processEvent(CanonicalEvent event) {
+        System.out.println("[CorrelatorService] Procesando evento: " + event.getEvent_id() + " tipo: " + event.getEvent_type());
         // Idempotencia: evitar procesar dos veces el mismo event_id
         String seenKey = "corr:seen:" + event.event_id;
         Boolean alreadySeen = redisTemplate.hasKey(seenKey);
-        if (Boolean.TRUE.equals(alreadySeen)) return;
+        if (Boolean.TRUE.equals(alreadySeen)) {
+            System.out.println("[CorrelatorService] Evento ya procesado: " + event.getEvent_id());
+            return;
+        }
         redisTemplate.opsForValue().set(seenKey, "1", Duration.ofMinutes(10));
 
         // Guardar resumen de evento en Redis por zona
-    String zone = event.geo.get("zone").toString();
-    String zoneKey = "corr:zone:" + zone;
-    EventSummary summary = new EventSummary(event.getEvent_type(), event.getTimestamp(), event.getPayload(), event.getEvent_id());
+        String zone = event.geo.get("zone").toString();
+        String zoneKey = "corr:zone:" + zone;
+        UUID eventIdUuid = UUID.fromString(event.getEvent_id());
+        EventSummary summary = new EventSummary(
+            event.getEvent_type(),
+            event.getTimestamp(),
+            event.getPayload(),
+            eventIdUuid
+        );
         redisTemplate.opsForList().rightPush(zoneKey, summary);
         redisTemplate.expire(zoneKey, Duration.ofMinutes(10));
         
@@ -55,109 +65,157 @@ public class CorrelatorService {
         List<EventSummary> lprEvents = new ArrayList<>();
         List<EventSummary> citizenEvents = new ArrayList<>();
         List<EventSummary> acousticEvents = new ArrayList<>();
+        List<EventSummary> fireCitizenEvents = new ArrayList<>();
+        List<EventSummary> fireAcousticEvents = new ArrayList<>();
         Instant now = Instant.parse(event.timestamp);
 
         ObjectMapper mapper = new ObjectMapper();
 
         for (Object obj : recentEvents) {
-    try {
-        EventSummary e;
-        if (obj instanceof String) {
-            e = mapper.readValue((String) obj, EventSummary.class);
-        } else if (obj instanceof EventSummary) {
-            e = (EventSummary) obj;
-        } else {
-            continue;
+            try {
+                EventSummary e;
+                if (obj instanceof String) {
+                    e = mapper.readValue((String) obj, EventSummary.class);
+                } else if (obj instanceof EventSummary) {
+                    e = (EventSummary) obj;
+                } else {
+                    continue;
+                }
+
+                Instant ts = Instant.parse(e.getTimestamp());
+                long diffSec = Math.abs(Duration.between(ts, now).getSeconds());
+
+                if ("panic.button".equals(e.getEvent_type()) && diffSec <= 120) panicEvents.add(e);
+                if ("sensor.lpr".equals(e.getEvent_type()) && e.getPayload() != null && e.getPayload().containsKey("velocidad_estimada")) {
+                    double v = Double.parseDouble(e.getPayload().get("velocidad_estimada").toString());
+                    if (v > 80 && diffSec <= 120) lprEvents.add(e);
+                }
+                if ("citizen.report".equals(e.getEvent_type()) && e.getPayload() != null) {
+                    if ("accidente".equals(e.getPayload().get("tipo_evento")) && diffSec <= 300) citizenEvents.add(e);
+                    if ("incendio".equals(e.getPayload().get("tipo_evento")) && diffSec <= 300) fireCitizenEvents.add(e);
+                }
+                if ("sensor.acoustic".equals(e.getEvent_type()) && e.getPayload() != null) {
+                    String tipoSonido = (String) e.getPayload().get("tipo_sonido_detectado");
+                    if (("explosion".equals(tipoSonido) || "vidrio_roto".equals(tipoSonido)) && diffSec <= 300) acousticEvents.add(e);
+                    if (("explosion".equals(tipoSonido) || (e.getPayload().containsKey("nivel_decibeles") && Double.parseDouble(e.getPayload().get("nivel_decibeles").toString()) > 100)) && diffSec <= 300) fireAcousticEvents.add(e);
+                }
+            } catch (Exception ex) {
+                System.err.println("[CorrelatorService] Error procesando evento en ventana: " + ex.getMessage());
+            }
         }
-
-        Instant ts = Instant.parse(e.getTimestamp());
-        long diffSec = Math.abs(Duration.between(ts, now).getSeconds());
-
-        if ("panic.button".equals(e.getEvent_type()) && diffSec <= 120) panicEvents.add(e);
-        if ("sensor.lpr".equals(e.getEvent_type()) && e.getPayload() != null && e.getPayload().containsKey("velocidad_estimada")) {
-            double v = Double.parseDouble(e.getPayload().get("velocidad_estimada").toString());
-            if (v > 80 && diffSec <= 120) lprEvents.add(e);
-        }
-        if ("citizen.report".equals(e.getEvent_type()) && e.getPayload() != null && 
-            "accidente".equals(e.getPayload().get("tipo_evento")) && diffSec <= 300) citizenEvents.add(e);
-
-        if ("sensor.acoustic".equals(e.getEvent_type()) && e.getPayload() != null && 
-            ("explosion".equals(e.getPayload().get("tipo_sonido_detectado")) || "vidrio_roto".equals(e.getPayload().get("tipo_sonido_detectado"))) && diffSec <= 300)
-            acousticEvents.add(e);
-    } catch (Exception ex) {
-        System.out.println(">>> [WARN] Error deserializando evento: " + ex.getMessage());
-    }
-}
 
         // Regla posible robo
         if (!panicEvents.isEmpty() && !lprEvents.isEmpty()) {
             CorrelatedAlert alert = new CorrelatedAlert();
-            alert.alert_id = UUID.randomUUID().toString();
-            alert.correlation_id = event.correlation_id != null ? event.correlation_id : UUID.randomUUID().toString();
+            alert.alert_id = UUID.randomUUID();
+            alert.correlation_id = event.correlation_id != null ? UUID.fromString(event.correlation_id) : UUID.randomUUID();
             alert.type = "possible_robbery";
             alert.score = 0.85;
             alert.zone = zone;
             alert.window = Map.of("start", panicEvents.get(0).getTimestamp(), "end", event.getTimestamp());
             List<String> evidence = new ArrayList<>();
-            for (EventSummary e : panicEvents) evidence.add(e.getEvent_id());
-            for (EventSummary e : lprEvents) evidence.add(e.getEvent_id());
+            for (EventSummary e : panicEvents) evidence.add(e.getEvent_id().toString());
+            for (EventSummary e : lprEvents) evidence.add(e.getEvent_id().toString());
             alert.evidence = evidence;
             alert.created_at = Instant.now().toString();
-            
+
+            System.out.println("[CorrelatorService] Alerta generada: possible_robbery para evento " + event.getEvent_id());
             // Persistir en BD PRIMERO, luego publicar a Kafka
             alertService.saveAlert(alert);
             kafkaTemplate.send("correlated.alerts", alert.zone, alert);
-            
+
             // Guardar alerta en Redis para endpoint /alerts/active (TTL 10 min)
             String alertActiveKey = "alerts:active:" + zone;
             redisTemplate.opsForList().rightPush(alertActiveKey, alert);
             redisTemplate.expire(alertActiveKey, Duration.ofMinutes(10));
         }
 
-        // Regla accidente
+        // Regla accidente con caída repentina de velocidad en LPR
         if (!citizenEvents.isEmpty() && !acousticEvents.isEmpty()) {
+            boolean lprDropDetected = false;
+            double prevSpeed = -1;
+            for (EventSummary e : lprEvents) {
+                if (e.getPayload() != null && e.getPayload().containsKey("velocidad_estimada")) {
+                    double speed = Double.parseDouble(e.getPayload().get("velocidad_estimada").toString());
+                    if (prevSpeed > 80 && speed < 40 && (prevSpeed - speed) >= 40) {
+                        lprDropDetected = true;
+                        break;
+                    }
+                    prevSpeed = speed;
+                }
+            }
+            if (lprDropDetected) {
+                CorrelatedAlert alert = new CorrelatedAlert();
+                alert.alert_id = UUID.randomUUID();
+                alert.correlation_id = event.correlation_id != null ? UUID.fromString(event.correlation_id) : UUID.randomUUID();
+                alert.type = "accident";
+                alert.score = 0.85;
+                alert.zone = zone;
+                alert.window = Map.of("start", citizenEvents.get(0).getTimestamp(), "end", event.getTimestamp());
+                List<String> evidence = new ArrayList<>();
+                for (EventSummary e : citizenEvents) evidence.add(e.getEvent_id().toString());
+                for (EventSummary e : acousticEvents) evidence.add(e.getEvent_id().toString());
+                for (EventSummary e : lprEvents) evidence.add(e.getEvent_id().toString());
+                alert.evidence = evidence;
+                alert.created_at = Instant.now().toString();
+
+                System.out.println("[CorrelatorService] Alerta generada: accident para evento " + event.getEvent_id());
+                alertService.saveAlert(alert);
+                kafkaTemplate.send("correlated.alerts", alert.zone, alert);
+
+                // Guardar alerta en Redis para endpoint /alerts/active (TTL 10 min)
+                String alertActiveKey = "alerts:active:" + zone;
+                redisTemplate.opsForList().rightPush(alertActiveKey, alert);
+                redisTemplate.expire(alertActiveKey, Duration.ofMinutes(10));
+            }
+        }
+
+        // Regla incendio: combinación de citizen.report (incendio) y sensor.acoustic (explosion o decibeles altos)
+        if (!fireCitizenEvents.isEmpty() && !fireAcousticEvents.isEmpty()) {
             CorrelatedAlert alert = new CorrelatedAlert();
-            alert.alert_id = UUID.randomUUID().toString();
-            alert.correlation_id = event.correlation_id != null ? event.correlation_id : UUID.randomUUID().toString();
-            alert.type = "accident";
-            alert.score = 0.85;
+            alert.alert_id = UUID.randomUUID();
+            alert.correlation_id = event.correlation_id != null ? UUID.fromString(event.correlation_id) : UUID.randomUUID();
+            alert.type = "fire";
+            alert.score = 0.95;
             alert.zone = zone;
-            alert.window = Map.of("start", citizenEvents.get(0).getTimestamp(), "end", event.getTimestamp());
+            alert.window = Map.of("start", fireCitizenEvents.get(0).getTimestamp(), "end", event.getTimestamp());
             List<String> evidence = new ArrayList<>();
-            for (EventSummary e : citizenEvents) evidence.add(e.getEvent_id());
-            for (EventSummary e : acousticEvents) evidence.add(e.getEvent_id());
+            for (EventSummary e : fireCitizenEvents) evidence.add(e.getEvent_id().toString());
+            for (EventSummary e : fireAcousticEvents) evidence.add(e.getEvent_id().toString());
             alert.evidence = evidence;
             alert.created_at = Instant.now().toString();
-            
-           
+
+            System.out.println("[CorrelatorService] Alerta generada: fire para evento " + event.getEvent_id());
             alertService.saveAlert(alert);
             kafkaTemplate.send("correlated.alerts", alert.zone, alert);
-            
+
             // Guardar alerta en Redis para endpoint /alerts/active (TTL 10 min)
             String alertActiveKey = "alerts:active:" + zone;
             redisTemplate.opsForList().rightPush(alertActiveKey, alert);
             redisTemplate.expire(alertActiveKey, Duration.ofMinutes(10));
         }
-
         // --- Regla de prueba: múltiples LPR en la misma zona ---
         if (lprEvents.size() >= 3) {
             CorrelatedAlert alert = new CorrelatedAlert();
-            alert.alert_id = UUID.randomUUID().toString();
-            alert.correlation_id = event.correlation_id != null ? event.correlation_id : UUID.randomUUID().toString();
+            alert.alert_id = UUID.randomUUID();
+            alert.correlation_id = event.correlation_id != null ? UUID.fromString(event.correlation_id) : UUID.randomUUID();
             alert.type = "traffic_speed_violation";
             alert.score = 0.90;
             alert.zone = zone;
             alert.window = Map.of("start", lprEvents.get(0).getTimestamp(), "end", event.getTimestamp());
             
             List<String> evidence = new ArrayList<>();
-            for (EventSummary e : lprEvents) evidence.add(e.getEvent_id());
+            for (EventSummary e : lprEvents) evidence.add(e.getEvent_id().toString());
             alert.evidence = evidence;
             alert.created_at = Instant.now().toString();
 
-            System.out.println(">>> [DEBUG] Correlated " + lprEvents.size() + " LPR events in zone " + zone);
+            System.out.println("[CorrelatorService] Alerta generada: traffic_speed_violation para evento " + event.getEvent_id());
             alertService.saveAlert(alert);
             kafkaTemplate.send("correlated.alerts", alert.zone, alert);
         }
-
     }
 }
+
+
+
+

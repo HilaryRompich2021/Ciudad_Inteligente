@@ -5,10 +5,10 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
 import java.util.UUID;
 
-public interface AlertRepository extends JpaRepository<AlertEntity, String> {
+public interface AlertRepository extends JpaRepository<AlertEntity, UUID> {
 
     // Método para verificar si existe un alert_id (deduplicación)
-    boolean existsById(String alertId);
+    boolean existsById(UUID alertId);
     
     // Método para consultar alertas por zona 
     List<AlertEntity> findByZone(String zone); 

@@ -34,3 +34,6 @@ build/
 
 ### Docker Compose Pruebas (WSL only) ###
 docker-compose.*.pruebas.yml
+
+# Variables de entorno (no subir credenciales)
+.env
