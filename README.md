@@ -1,77 +1,70 @@
 
-# Ciudad_Inteligente
-=======
-# Proyecto Ciudad Inteligente — Base de Infra (Fase 0)
 
-Este repo contiene el **esqueleto de infraestructura** para que el equipo trabaje en paralelo y tú puedas integrar rápidamente.
+# Ciudad Inteligente — Infraestructura Base
+
+Este repositorio contiene la infraestructura y configuración principal para el proyecto **Ciudad Inteligente**, una plataforma distribuida para la gestión y análisis de eventos urbanos en tiempo real.
+
+## 1. Resumen del Proyecto
+Ciudad Inteligente integra microservicios, procesamiento de eventos, almacenamiento y visualización para monitorear sensores, generar alertas y analizar datos urbanos.
+
+## 2. Arquitectura General
+**Flujo principal:**
+```
+Ingestor → Kafka → Correlator → PostgreSQL → (ETL/Job con Airflow) → Elasticsearch → Grafana/Kibana
+```
+Cada componente está desacoplado y se comunica por eventos, permitiendo escalabilidad y resiliencia.
+
+## 3. Estructura de Carpetas
+- `analytics/`: Infraestructura de análisis y visualización (Airflow, Elasticsearch, Grafana, Kibana).
+- `platform/`: Microservicios base y orquestación (Kafka, Zookeeper, Redis, Kafka UI).
+- `db/`: Scripts y documentación para bases de datos (PostgreSQL).
+- `src/`: Código fuente de microservicios:
+  - `correlator/`: Servicio de correlación de eventos y generación de alertas.
+  - `ingestor/`: Servicio de ingestión de eventos desde sensores.
+- `scripts/`: Scripts para simulación y pruebas de eventos.
+- `docs/`: Documentación técnica, ejemplos de eventos y guías de uso.
+- `mops/`: Documentación y guías de operación y monitoreo.
+
+## 4. Guía de Onboarding
+1. Copia los archivos `.env.example` y completa tus credenciales:
+	```bash
+	cp platform/.env.example platform/.env
+	cp analytics/grafana/.env.example analytics/grafana/.env
+	cp analytics/airflow/.env.example analytics/airflow/.env
+	# Edita cada archivo .env con tus credenciales
+	```
+2. Levanta los servicios:
+	```bash
+	make -f platform/Makefile up
+	```
+3. Accede a los servicios principales:
+	- **Kafka-UI:** [http://localhost:8081](http://localhost:8081)
+	- **Grafana:** [http://localhost:3000](http://localhost:3000)
+	- **Airflow:** [http://localhost:8082](http://localhost:8082)
+	- **Kibana (Elasticsearch):** [http://localhost:5601](http://localhost:5601)
+
+## 5. Servicios Principales
+- **Kafka:** Broker de eventos para comunicación entre microservicios.
+- **Airflow:** Orquestación de ETLs y jobs de análisis.
+- **Grafana:** Visualización de métricas y dashboards.
+- **Kibana/Elasticsearch:** Almacenamiento y búsqueda de eventos y alertas.
+- **Redis:** Almacenamiento en memoria para datos temporales.
+- **Correlator:** Microservicio para correlación y generación de alertas.
+- **Ingestor:** Microservicio para ingestión de eventos desde sensores.
+- **PostgreSQL:** Base de datos relacional para persistencia de eventos.
+
+## 6. Simulación y Pruebas
+Para simular eventos y probar reglas, consulta `scripts/README.md`. Incluye scripts para enviar eventos, forzar alertas y verificar tópicos en Kafka.
+
+## 7. Variables de Entorno
+Todos los servicios usan archivos `.env` para credenciales y configuración. Ejemplos y plantillas disponibles en cada carpeta.
+
+## 8. Referencias y Enlaces Útiles
+- **Guía oficial del proyecto:** `Final-Project-Guide.md`
+- **Esquema de eventos:** `docs/EVENTOS-PRUEBA.md`
+- **Dashboards Grafana:** `analytics/grafana/provisioning/dashboards/`
+- **Templates Elasticsearch:** `analytics/elasticsearch/templates/`
 
 ---
-**Guía para probar el microservicio ingestor (procesamiento de eventos) con un Kafka externo al del proyecto principal**
-
-El microservicio `ingestor` es el encargado de recibir, validar y publicar eventos en formato canónico hacia Kafka.
-
-Existen guías específicas para levantar y probar solo este microservicio, ya sea de forma local o usando Docker:
-
-- [`src/ingestor/README.md`](src/ingestor/README.md): Para pruebas locales (Java/Maven) conectando a cualquier Kafka externo.
-- [`src/ingestor/README_PRUEBAS_INGESTOR.md`](src/ingestor/README_PRUEBAS_INGESTOR.md): Para pruebas usando Docker y variables de entorno.
-
-Ambas guías incluyen ejemplos de endpoints y payloads válidos según el esquema canónico.
----
-
-## Estructura
-```
-platform/                # Docker Compose + .env
-scripts/                 # Scripts de Kafka, redes, etc. (los agregarán tus compañeros)
-db/                      # SQL de usuarios y tablas (los agregará el owner de DB)
-redis/                   # Seeds / catálogos para Redis
-mops/                    # Documentación de arranque y validación
-```
-
-## Paso 1: Configurar entorno
-Copia el archivo de ejemplo y ajusta valores:
-```bash
-cp platform/.env.sample platform/.env
-# Modo local
-# (En Windows usa notepad o edítalo a mano)
-```
-Edita `platform/.env` y deja:
-```
-MODE=local
-HOST_IP=127.0.0.1
-TEAM_ID=t01
-POSTGRES_PASSWORD=admin123
-```
-
-Si vas a apuntar al host del profesor el día de la clase, cambia a:
-```
-MODE=profe
-HOST_IP=192.168.1.50   # ejemplo
-```
-
-## Paso 2: Levantar servicios
-```bash
-make -f platform/Makefile up
-make -f platform/Makefile ps
-# Kafka-UI en http://localhost:8081
-```
-
-## Paso 3: Validar conectividad
-```bash
-# Kafka bootstrap
-nc -vz localhost 29092 || true
-# Redis
-nc -vz localhost 6379 || true
-# Postgres
-nc -vz localhost 5432 || true
-```
-
-## Equipo: ¿qué sube cada quien?
-- **Kafka (topics):** `scripts/create-topics.sh`, `scripts/verify-topics.sh`
-- **DB:** `db/users_and_schema.sql`, `db/tables_phase0.sql`
-- **Redis:** `redis/redis-setup.redis`
-- **Redes/Docs:** `mops/MOPS_Fase0.md`, `scripts/connectivity_checks.sh`
-
-## Notas
-- Este compose está pensado para laboratorio (sin seguridad). No usar en producción.
-- Kafka anuncia `PLAINTEXT_HOST=${HOST_IP}:29092` para que otros clientes en LAN puedan conectarse.
+Para dudas o colaboración, revisa la documentación en la carpeta `docs/` y los archivos guía en cada servicio.
 

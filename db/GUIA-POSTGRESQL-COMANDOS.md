@@ -7,7 +7,7 @@
 docker ps | grep postgres
 
 # Accede al contenedor con usuario y base de datos correctos
-docker exec -it platform-postgres-1 -U postgres -d ciudades
+docker exec -it platform-postgres-1 psql -U postgres -d ciudades
 ```
 
 ---
