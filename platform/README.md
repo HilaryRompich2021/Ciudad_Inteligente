@@ -1,40 +1,52 @@
-# 🌆 Ciudad Inteligente — Integración Airflow + PostgreSQL + Grafana
+# 🌆 Ciudad Inteligente — Plataforma de Mensajería y Cache (Kafka + Redis)
 
 ## 🚀 Descripción
-Esta rama (`airflow`) contiene la integración completa del **DAG de analítica (ETL)** con **Airflow**, **PostgreSQL** y **Grafana**.  
-Permite ejecutar flujos automáticos de datos desde Kafka, agregarlos y visualizarlos en dashboards interactivos.
+Este módulo contiene la infraestructura de mensajería y cache para microservicios, usando **Kafka** (con Zookeeper), **Redis** y la interfaz web **Kafka UI** para monitoreo.
 
 ---
 
 ## 🧱 Componentes principales
 
-| Servicio | Puerto | Descripción |
-|-----------|--------|-------------|
-| 🐘 **PostgreSQL** | 5432 | Base de datos `ciudades` con tablas `alerts` y `analytics_results` |
-| 🌀 **Airflow Webserver** | 8081 | Interfaz de administración y ejecución de DAGs |
-| ⚙️ **Airflow Scheduler** | interno | Ejecuta las tareas del DAG `etl_analytics_dag` |
-| 📊 **Grafana** | 3000 | Visualización de métricas ETL |
-| 📦 **Kafka / Zookeeper** | 9092 / 2181 | Flujo de eventos IoT |
+| Servicio      | Puerto         | Descripción                                 |
+|---------------|---------------|---------------------------------------------|
+| 🌀 Zookeeper   | 2181          | Coordinador para Kafka                      |
+| 📦 Kafka      | 9092 / 29092  | Broker de eventos IoT                       |
+| �️ Redis      | 6379          | Almacenamiento en memoria para caché/colas  |
+| �️ Kafka UI   | 8081          | Interfaz web para monitoreo de Kafka        |
 
 ---
 
-## 🧩 DAG `etl_analytics_dag.py`
+## 🚦 Cómo levantar el stack
 
-**Objetivo:**  
-Agrupar eventos almacenados en `alerts` y generar métricas en `analytics_results` cada 10 minutos.
+1. Asegúrate de tener Docker y Docker Compose instalados.
+2. Desde la carpeta `platform`, ejecuta:
 
-**Tareas:**
-1. `clear_old_data` → limpia métricas antiguas (>1 día)  
-2. `aggregate_alerts` → agrega nuevas métricas agrupadas por tipo y zona
+   ```powershell
+   docker-compose up -d
+   ```
+
+Esto levantará los servicios de Kafka, Zookeeper, Redis y Kafka UI en segundo plano.
+
+Accede a la interfaz de Kafka UI en: [http://localhost:8081](http://localhost:8081)
+
+Para detener el stack:
+
+   ```powershell
+   docker-compose down
+   ```
 
 ---
 
-## 🧠 Flujo de datos general
+## 🔗 Red compartida
 
-```mermaid
-graph LR
-A[Postman] --> B[Ingestor API]
-B --> C[Kafka Topic: t01.events.standardized]
-C --> D[Airflow ETL]
-D --> E[(PostgreSQL - analytics_results)]
-E --> F[Grafana Dashboard]
+Todos los servicios están conectados a la red externa `platform_default`, permitiendo la integración con otros stacks del proyecto.
+
+---
+
+
+## 📄 Notas finales
+
+- La configuración y documentación de Redis se encuentra en la carpeta `redis/`.
+- La infraestructura de analítica y visualización (Airflow, Elasticsearch, Grafana, Kibana) está en el módulo `analytics/
+
+```
