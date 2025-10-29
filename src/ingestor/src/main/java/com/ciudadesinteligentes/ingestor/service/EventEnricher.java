@@ -23,10 +23,13 @@ public class EventEnricher {
         if (event.getCorrelationId() == null || event.getCorrelationId().isEmpty()) {
             event.setCorrelationId(UUID.randomUUID().toString());
         }
-        
-        // Auto-extraer partition_key según la guía: geo.zone o payload.placa_vehicular
+        // Asignar partition_key como event_type según nueva lógica
         if (event.getPartitionKey() == null || event.getPartitionKey().isEmpty()) {
-            event.setPartitionKey(event.getEventType());
+            if (event.getEventType() != null && !event.getEventType().isEmpty()) {
+                event.setPartitionKey(event.getEventType());
+            }
         }
     }
+    
+    
 }

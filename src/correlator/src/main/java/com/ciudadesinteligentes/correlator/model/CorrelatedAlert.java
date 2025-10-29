@@ -1,11 +1,12 @@
 package com.ciudadesinteligentes.correlator.model;
 
 import java.util.List;
+import java.util.UUID;
 import java.util.Map;
 
 public class CorrelatedAlert {
-    public String alert_id;
-    public String correlation_id;
+    public UUID alert_id;
+    public UUID correlation_id;
     public String type;
     public double score;
     public String zone;

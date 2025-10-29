@@ -1,17 +1,17 @@
 apiVersion: 1
 
 datasources:
-  - name: PostgreSQL-Ciudades
+  - name: EventosDB
     type: postgres
     access: proxy
-    url: host.docker.internal:5432
+    url: localhost:5432
     database: ciudades
-    user: postgres
+    user: <usuario>
     secureJsonData:
-      password: postgres
+      password: <password>
     jsonData:
       sslmode: disable
-      postgresVersion: 1600
+      postgresVersion: 1500
       timescaledb: false
     isDefault: true
     editable: true

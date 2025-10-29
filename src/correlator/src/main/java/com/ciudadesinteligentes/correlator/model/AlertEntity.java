@@ -2,6 +2,7 @@ package com.ciudadesinteligentes.correlator.model;
 
 import jakarta.persistence.*;
 import lombok.Data;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import java.util.UUID;
@@ -22,7 +23,7 @@ public class AlertEntity {
     private String type;
 
     @Column(name = "score")
-    private Double score;
+    private Integer score;
 
     @Column(name = "zone")
     private String zone;
@@ -33,9 +34,13 @@ public class AlertEntity {
     @Column(name = "window_end")
     private OffsetDateTime windowEnd;
 
+    /*@Column(name = "evidence", columnDefinition = "jsonb")
+    @JdbcTypeCode(SqlTypes.JSON)
+    private String evidence;*/
     @Column(name = "evidence", columnDefinition = "jsonb")
     @JdbcTypeCode(SqlTypes.JSON)
-    private String evidence;
+    private JsonNode evidence;
+
 
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;

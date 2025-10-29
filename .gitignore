@@ -1,15 +1,15 @@
-### test para wsl y docker ce
-/scripts/bulk-burst-test.py
-
 # Personal technical documentation (not for public repo)
-INGESTOR_TECHNICAL_GUIDE.md
+docs/INGESTOR_TECHNICAL_GUIDE.md
 arquitectura.png
 mops/Guia.md
 scripts/scripts.png 
 scripts/topics.png
-GUÍA_PRUEBAS_FASE1.md
-GUÍA_GIT_WORKFLOW.md
-guias/*
+docs/GUÍA_PRUEBAS_FASE1.md
+docs/GUÍA_GIT_WORKFLOW.md
+
+
+docs/guia-ingestor.md
+docs/guia-correlator-grafana.md
 
 # Build artifacts
 target/
@@ -34,9 +34,15 @@ Thumbs.db
 # Docker volumes (if any)
 docker-volumes/
 
-# Docker Compose pruebas files (WSL+Docker CE only)
-docker-compose.pruebas.yml
-**/docker-compose.*.pruebas.yml
 
-# Grafana provisioning pruebas (WSL+Docker CE only)
-platform/grafana/provisioning-pruebas/
+
+# Archivos de entorno (no subir credenciales reales)
+*.env
+*/.env
+*/**/.env
+
+# Archivos generados en Analytics
+Analytics/dags/__pycache__/
+Analytics/airflow_data/*.bak
+Analytics/airflow_data/*.pid
+Analytics/airflow_data/logs/

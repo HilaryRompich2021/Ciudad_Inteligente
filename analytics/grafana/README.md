@@ -18,13 +18,33 @@ Grafana proporciona dashboards interactivos para visualizar eventos, alertas y m
 
 ---
 
-## 📈 Dashboards Disponibles
+
+## 📈 Dashboards Disponibles y Flujo de Datos
+
+### Flujo de Datos
+
+1. **Persistencia principal:** Los eventos y alertas se almacenan en PostgreSQL.
+2. **ETL/Job:** Airflow ejecuta un DAG que sincroniza los datos de PG a Elasticsearch cada hora.
+3. **Indexación en ES:** Los índices `events-*` y `alerts-*` en ES permiten búsquedas rápidas y visualización en tiempo real.
+4. **Grafana:** Los dashboards consultan tanto PostgreSQL como Elasticsearch según el panel:
+  - Paneles analíticos y tablas: PostgreSQL
+  - Mapas de calor, cronologías y búsquedas rápidas: Elasticsearch
+
+### Datasources
+
+- **PostgreSQL-Ciudades:** Para consultas analíticas y tablas detalladas.
+- **Elasticsearch-Ciudades:** Para mapas de calor, cronologías y búsquedas rápidas sobre los índices `events-*` y `alerts-*`.
+
 
 ### 1. **Dashboard Principal - Ciudad Inteligente**
 
 **Ruta**: Home → Dashboards → Ciudad Inteligente - Dashboard Principal
 
 **Paneles incluidos:**
+  - **Mapa de calor por zona:** Recuento de `event_type` a lo largo del tiempo (Elasticsearch)
+  - **Cronología de alertas:** Alertas/min por `type` (Elasticsearch)
+  - **Tabla de alertas activas:** Las N más recientes con `zone`,`score` (PostgreSQL o Elasticsearch)
+  - **Desglose de evidencia:** Panel que permite ver los eventos relacionados a una alerta seleccionada (PostgreSQL o Elasticsearch)
 - 📊 **Total Alertas (24h)**: Contador de alertas generadas en las últimas 24 horas
 - 📊 **Total Eventos (24h)**: Contador de eventos procesados en las últimas 24 horas
 - 📈 **Alertas por Tipo**: Gráfico temporal de alertas categorizadas (possible_robbery, accident, etc.)
@@ -42,6 +62,9 @@ Grafana proporciona dashboards interactivos para visualizar eventos, alertas y m
 **Ruta**: Home → Dashboards → Ciudad Inteligente - Mapa de Calor por Zona
 
 **Paneles incluidos:**
+  - **Mapa Geográfico:** Visualización de eventos en mapa usando el campo `geo` de Elasticsearch (`geo_point`)
+  - **Heatmap Temporal:** Mapa de calor mostrando actividad por zona y tipo de evento
+  - **Consulta KQL de ejemplo:** `event_type: "panic.button" AND geo.zone: "zone_4"` (Kibana/Grafana)
 - 🗺️ **Mapa Geográfico**: Visualización de eventos en mapa con marcadores por ubicación
 - 📊 **Eventos por Zona y Tipo**: Barchart comparativo de eventos
 - 🔥 **Heatmap Temporal**: Mapa de calor mostrando actividad por zona en el tiempo
@@ -52,13 +75,19 @@ Grafana proporciona dashboards interactivos para visualizar eventos, alertas y m
 
 ## 🔧 Configuración
 
-### Datasource
+### Configuración de Datasources
 
-El datasource de PostgreSQL está pre-configurado automáticamente:
+- **PostgreSQL-Ciudades:**
+  - Host: host.docker.internal:5432
+  - Database: ciudades
+  - Usado para paneles analíticos y tablas.
 
-- **Nombre**: PostgreSQL-Ciudades
-- **Host**: host.docker.internal:5432
-- **Database**: ciudades
+- **Elasticsearch-Ciudades:**
+  - URL: http://elasticsearch:9200
+  - Index pattern: `events-*`, `alerts-*`
+  - Usado para mapas de calor, cronologías y búsquedas rápidas.
+
+Ambos datasources están pre-configurados y listos para usar en los dashboards versionados en la carpeta `provisioning/dashboards`.
 - **Usuario**: postgres
 - **Contraseña**: postgres
 
@@ -68,6 +97,37 @@ El datasource de PostgreSQL está pre-configurado automáticamente:
 2. Click en **PostgreSQL-Ciudades**
 3. Scroll hasta abajo y click en **Save & Test**
 4. Deberías ver: ✅ "Database Connection OK"
+
+---
+
+## 🔒 Seguridad y credenciales
+
+- El archivo de configuración de la datasource PostgreSQL (`provisioning/datasources/postgres.yml`) contiene credenciales reales y **no debe versionarse** en el repositorio.
+- Usa el archivo de ejemplo `postgres.yml.example` y crea tu propio `postgres.yml` con los datos reales (usuario, contraseña, host, base de datos).
+- Ejemplo de configuración para entorno local:
+
+```yaml
+apiVersion: 1
+
+datasources:
+  - name: EventosDB
+    type: postgres
+    access: proxy
+    url: localhost:5432
+    database: ciudades
+    user: postgres
+    secureJsonData:
+      password: postgres
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1500
+      timescaledb: false
+    isDefault: true
+    editable: true
+```
+
+- El archivo `postgres.yml` está en `.gitignore` para proteger tus credenciales.
+- Repite el mismo proceso para la datasource de Elasticsearch (`elasticsearch.yml`).
 
 ---
 

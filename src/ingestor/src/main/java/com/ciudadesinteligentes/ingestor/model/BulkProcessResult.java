@@ -1,13 +1,15 @@
+
 package com.ciudadesinteligentes.ingestor.model;
+import java.util.UUID;
 
 import java.util.List;
 
 public class BulkProcessResult {
     private int total;
-    private List<String> successfulEvents;
+    private List<UUID> successfulEvents;
     private List<ProcessingError> failedEvents;
 
-    public BulkProcessResult(int total, List<String> successfulEvents, List<ProcessingError> failedEvents) {
+    public BulkProcessResult(int total, List<UUID> successfulEvents, List<ProcessingError> failedEvents) {
         this.total = total;
         this.successfulEvents = successfulEvents;
         this.failedEvents = failedEvents;
@@ -18,7 +20,7 @@ public class BulkProcessResult {
         return total;
     }
 
-    public List<String> getSuccessfulEvents() {
+    public List<UUID> getSuccessfulEvents() {
         return successfulEvents;
     }
 
@@ -37,10 +39,10 @@ public class BulkProcessResult {
     // Clase interna para errores de procesamiento
     public static class ProcessingError {
         private int index;
-        private String eventId;
+    private UUID eventId;
         private String error;
 
-        public ProcessingError(int index, String eventId, String error) {
+    public ProcessingError(int index, UUID eventId, String error) {
             this.index = index;
             this.eventId = eventId;
             this.error = error;
@@ -50,7 +52,7 @@ public class BulkProcessResult {
             return index;
         }
 
-        public String getEventId() {
+        public UUID getEventId() {
             return eventId;
         }
 

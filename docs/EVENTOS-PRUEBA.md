@@ -13,20 +13,270 @@
 
 ## 📖 Introducción
 
-Esta guía proporciona **6 pares de eventos** diseñados específicamente para activar las reglas de correlación del microservicio Correlator y generar alertas.
+Esta guía proporciona ejemplos de eventos diseñados específicamente para activar las reglas de correlación del microservicio Correlator y generar **4 tipos de alertas**:
+
+- `possible_robbery`
+- `accident`
+- `fire`
+- `traffic_speed_violation`
 
 ### Requisitos Previ## 📊 Resumen de Escenarios
 
-| # | Tipo Alerta | Zona | Eventos | Tiempo | Event IDs (últimos 4 dígitos) |
-|---|-------------|------|---------|--------|--------------------------------|
-| 1 | possible_robbery | zone_centro_comercial | panic + lpr | 90s | ...0001, ...0002 |
-| 2 | possible_robbery | zone_residencial_norte | panic + lpr | 60s | ...0003, ...0004 |
-| 3 | accident | zone_autopista_sur | citizen + acoustic | 120s | ...0005, ...0006 |
-| 4 | accident | zone_centro_historico | citizen + acoustic | 180s | ...0007, ...0008 |
-| 5 | possible_robbery | zone_industrial_este | panic + lpr | 45s | ...0009, ...0010 |
-| 6 | accident | zone_universitaria | citizen + acoustic | 240s | ...0011, ...0012 |
+| # | Tipo Alerta                | Zona                   | Eventos involucrados         | Tiempo | Event IDs (últimos 4 dígitos) |
+|---|----------------------------|------------------------|-----------------------------|--------|-------------------------------|
+| 1 | possible_robbery          | zone_centro_comercial  | panic + lpr                 | 90s    | ...0001, ...0002               |
+| 2 | accident                  | zone_autopista_sur     | citizen + acoustic          | 120s   | ...0003, ...0004               |
+| 3 | fire                      | zone_industrial_este   | citizen (incendio) + acoustic (explosion/decibeles altos) | 180s   | ...0005, ...0006               |
+| 4 | traffic_speed_violation   | zone_autopista_norte   | múltiples lpr (velocidad > 80) | 60s    | ...0007, ...0008, ...0009      |
 
-**Nota:** Todos los Event IDs son UUIDs v4 válidos. La tabla muestra solo los últimos 4 dígitos para referencia.stema completo desplegado (consulta `README-DEPLOYMENT.md`)
+
+**Nota:** Todos los Event IDs son UUIDs v4 válidos. La tabla muestra solo los últimos 4 dígitos para referencia.
+
+---
+
+## 📝 Ejemplos JSON para cada tipo de alerta
+
+
+
+### 1. possible_robbery
+```json
+{
+  "event_version": "1.0",
+  "event_type": "panic.button",
+  "event_id": "a1b2c3d4-0001-4001-8001-000000000001",
+  "producer": "test-suite",
+  "source": "simulated",
+  "correlation_id": "e2b2c3d4-1111-4001-8001-000000000011",
+  "trace_id": "f3b2c3d4-2222-4001-8001-000000000022",
+  "timestamp": "2025-10-29T10:00:00Z",
+  "partition_key": "panic.button",
+  "geo": {
+    "zone": "zone_centro_comercial",
+    "lat": -12.0464,
+    "lon": -77.0428
+  },
+  "severity": "critical",
+  "payload": {
+    "tipo_de_alerta": "panico",
+    "identificador_dispositivo": "BTN-001",
+    "user_context": "movil"
+  }
+}
+```
+```json
+{
+  "event_version": "1.0",
+  "event_type": "sensor.lpr",
+  "event_id": "a1b2c3d4-0002-4001-8001-000000000002",
+  "producer": "test-suite",
+  "source": "simulated",
+  "correlation_id": "e2b2c3d4-1112-4001-8001-000000000012",
+  "trace_id": "f3b2c3d4-2223-4001-8001-000000000023",
+  "timestamp": "2025-10-29T10:01:30Z",
+  "partition_key": "sensor.lpr",
+  "geo": {
+    "zone": "zone_centro_comercial",
+    "lat": -12.0464,
+    "lon": -77.0428
+  },
+  "severity": "critical",
+  "payload": {
+    "placa_vehicular": "ABC123",
+    "velocidad_estimada": 90,
+    "modelo_vehiculo": "sedan",
+    "color_vehiculo": "rojo",
+    "ubicacion_sensor": "entrada_principal"
+  }
+}
+```
+
+
+
+### 2. accident
+```json
+{
+  "event_version": "1.0",
+  "event_type": "citizen.report",
+  "event_id": "a1b2c3d4-0003-4001-8001-000000000003",
+  "producer": "test-suite",
+  "source": "simulated",
+  "correlation_id": "e2b2c3d4-1113-4001-8001-000000000013",
+  "trace_id": "f3b2c3d4-2224-4001-8001-000000000024",
+  "timestamp": "2025-10-29T11:00:00Z",
+  "partition_key": "citizen.report",
+  "geo": {
+    "zone": "zone_autopista_sur",
+    "lat": -12.0500,
+    "lon": -77.0300
+  },
+  "severity": "critical",
+  "payload": {
+    "tipo_evento": "accidente",
+    "mensaje_descriptivo": "vehiculo volcado",
+    "ubicacion_aproximada": "zona_10",
+    "origen": "usuario"
+  }
+}
+```
+```json
+{
+  "event_version": "1.0",
+  "event_type": "sensor.acoustic",
+  "event_id": "a1b2c3d4-0004-4001-8001-000000000004",
+  "producer": "test-suite",
+  "source": "simulated",
+  "correlation_id": "e2b2c3d4-1114-4001-8001-000000000014",
+  "trace_id": "f3b2c3d4-2225-4001-8001-000000000025",
+  "timestamp": "2025-10-29T11:02:00Z",
+  "partition_key": "sensor.acoustic",
+  "geo": {
+    "zone": "zone_autopista_sur",
+    "lat": -12.0500,
+    "lon": -77.0300
+  },
+  "severity": "critical",
+  "payload": {
+    "tipo_sonido_detectado": "explosion",
+    "nivel_decibeles": 112,
+    "probabilidad_evento_critico": 0.83
+  }
+}
+```
+
+
+
+### 3. fire
+```json
+{
+  "event_version": "1.0",
+  "event_type": "citizen.report",
+  "event_id": "a1b2c3d4-0005-4001-8001-000000000005",
+  "producer": "test-suite",
+  "source": "simulated",
+  "correlation_id": "e2b2c3d4-1115-4001-8001-000000000015",
+  "trace_id": "f3b2c3d4-2226-4001-8001-000000000026",
+  "timestamp": "2025-10-29T12:00:00Z",
+  "partition_key": "citizen.report",
+  "geo": {
+    "zone": "zone_industrial_este",
+    "lat": -12.0600,
+    "lon": -77.0200
+  },
+  "severity": "critical",
+  "payload": {
+    "tipo_evento": "incendio",
+    "mensaje_descriptivo": "Incendio en almacén",
+    "ubicacion_aproximada": "zona_10",
+    "origen": "usuario"
+  }
+}
+```
+```json
+{
+  "event_version": "1.0",
+  "event_type": "sensor.acoustic",
+  "event_id": "a1b2c3d4-0006-4001-8001-000000000006",
+  "producer": "test-suite",
+  "source": "simulated",
+  "correlation_id": "e2b2c3d4-1116-4001-8001-000000000016",
+  "trace_id": "f3b2c3d4-2227-4001-8001-000000000027",
+  "timestamp": "2025-10-29T12:03:00Z",
+  "partition_key": "sensor.acoustic",
+  "geo": {
+    "zone": "zone_industrial_este",
+    "lat": -12.0600,
+    "lon": -77.0200
+  },
+  "severity": "critical",
+  "payload": {
+    "tipo_sonido_detectado": "explosion",
+    "nivel_decibeles": 112,
+    "probabilidad_evento_critico": 0.83
+  }
+}
+```
+
+
+
+### 4. traffic_speed_violation
+```json
+{
+  "event_version": "1.0",
+  "event_type": "sensor.lpr",
+  "event_id": "a1b2c3d4-0007-4001-8001-000000000007",
+  "producer": "test-suite",
+  "source": "simulated",
+  "correlation_id": "e2b2c3d4-1117-4001-8001-000000000017",
+  "trace_id": "f3b2c3d4-2228-4001-8001-000000000028",
+  "timestamp": "2025-10-29T13:00:00Z",
+  "partition_key": "sensor.lpr",
+  "geo": {
+    "zone": "zone_autopista_norte",
+    "lat": -12.0550,
+    "lon": -77.0250
+  },
+  "severity": "critical",
+  "payload": {
+    "placa_vehicular": "XYZ789",
+    "velocidad_estimada": 85,
+    "modelo_vehiculo": "suv",
+    "color_vehiculo": "negro",
+    "ubicacion_sensor": "autopista_norte_01"
+  }
+}
+```
+```json
+{
+  "event_version": "1.0",
+  "event_type": "sensor.lpr",
+  "event_id": "a1b2c3d4-0008-4001-8001-000000000008",
+  "producer": "test-suite",
+  "source": "simulated",
+  "correlation_id": "e2b2c3d4-1118-4001-8001-000000000018",
+  "trace_id": "f3b2c3d4-2229-4001-8001-000000000029",
+  "timestamp": "2025-10-29T13:00:30Z",
+  "partition_key": "sensor.lpr",
+  "geo": {
+    "zone": "zone_autopista_norte",
+    "lat": -12.0550,
+    "lon": -77.0250
+  },
+  "severity": "critical",
+  "payload": {
+    "placa_vehicular": "XYZ789",
+    "velocidad_estimada": 90,
+    "modelo_vehiculo": "suv",
+    "color_vehiculo": "negro",
+    "ubicacion_sensor": "autopista_norte_01"
+  }
+}
+```
+```json
+{
+  "event_version": "1.0",
+  "event_type": "sensor.lpr",
+  "event_id": "a1b2c3d4-0009-4001-8001-000000000009",
+  "producer": "test-suite",
+  "source": "simulated",
+  "correlation_id": "e2b2c3d4-1119-4001-8001-000000000019",
+  "trace_id": "f3b2c3d4-2230-4001-8001-000000000030",
+  "timestamp": "2025-10-29T13:01:00Z",
+  "partition_key": "sensor.lpr",
+  "geo": {
+    "zone": "zone_autopista_norte",
+    "lat": -12.0550,
+    "lon": -77.0250
+  },
+  "severity": "critical",
+  "payload": {
+    "placa_vehicular": "XYZ789",
+    "velocidad_estimada": 95,
+    "modelo_vehiculo": "suv",
+    "color_vehiculo": "negro",
+    "ubicacion_sensor": "autopista_norte_01"
+  }
+}
+```
 - Postman o curl para enviar eventos
 - Ingestor corriendo en puerto 8000
 - Correlator corriendo en puerto 8080
@@ -64,15 +314,16 @@ El **Event Ingestor** enriquece automáticamente los eventos con campos opcional
 | `correlation_id` | ❌ No | ✅ Auto-genera | UUID v4 aleatorio |
 | `partition_key` | ❌ No | ✅ Auto-extrae | De geo.zone o payload.placa_vehicular |
 
+
 **⚠️ Importante sobre `partition_key`:**
-- La BD requiere `partition_key NOT NULL`, por lo que el enriquecedor **DEBE** extraerlo si no viene
-- Prioridad de extracción: `geo.zone` > `payload.placa_vehicular` > **error si ninguno existe**
-- Si envías `partition_key` explícitamente, el ingestor lo respetará
+- Ahora, el campo `partition_key` debe ser igual a `event_type` en todos los eventos.
+- La BD requiere `partition_key NOT NULL`, por lo que el enriquecedor lo asigna automáticamente si no lo envías.
+- Si envías `partition_key` explícitamente, debe coincidir con el valor de `event_type`.
 
 **Esto significa que puedes:**
-1. **Enviar eventos SIN** `timestamp`, `trace_id`, `correlation_id` o `partition_key` - El Ingestor los generará/extraerá automáticamente
-2. **Enviar eventos CON** estos campos - El Ingestor respetará tus valores
-3. **SIEMPRE enviar** `event_id` como **UUID v4 válido** - No negociable
+1. **Enviar eventos SIN** `partition_key` y el Ingestor lo asignará igual a `event_type`.
+2. **Enviar eventos CON** `partition_key` igual a `event_type`.
+3. **SIEMPRE enviar** `event_id` como **UUID v4 válido** - No negociable.
 
 ### Cómo Generar Event IDs Únicos
 
@@ -197,6 +448,115 @@ https://www.uuidgenerator.net/
 ---
 
 ## 🎯 Escenarios de Prueba
+### 📍 Escenario extra: Incendio (fire)
+
+**Contexto:** Reporte ciudadano de incendio + sensor acústico detecta explosión
+
+#### Evento 1: Citizen Report
+
+```json
+{
+  "event_version": "1.0",
+  "event_type": "citizen.report",
+  "event_id": "<uuid>",
+  "producer": "test-suite",
+  "source": "simulated",
+  "correlation_id": "<uuid>",
+  "trace_id": "<uuid>",
+  "timestamp": "2025-10-27T12:00:00Z",
+  "partition_key": "citizen.report",
+  "geo": {"zone": "zone_1", "lat": 14.62, "lon": -90.52},
+  "severity": "critical",
+  "payload": {"tipo_evento": "incendio", "mensaje_descriptivo": "fuego en edificio", "ubicacion_aproximada": "zone_1", "origen": "usuario"}
+}
+```
+
+#### Evento 2: Sensor Acoustic (10 segundos después)
+
+```json
+{
+  "event_version": "1.0",
+  "event_type": "sensor.acoustic",
+  "event_id": "<uuid>",
+  "producer": "test-suite",
+  "source": "simulated",
+  "correlation_id": "<uuid>",
+  "trace_id": "<uuid>",
+  "timestamp": "2025-10-27T12:00:10Z",
+  "partition_key": "sensor.acoustic",
+  "geo": {"zone": "zone_1", "lat": 14.62, "lon": -90.52},
+  "severity": "critical",
+  "payload": {"tipo_sonido_detectado": "explosion", "nivel_decibeles": 120, "probabilidad_evento_critico": 0.95}
+}
+```
+
+**✅ Resultado Esperado:** Alerta `fire` en zona `zone_1`
+
+---
+### 📍 Escenario extra: Violación de velocidad (traffic_speed_violation)
+
+**Contexto:** Tres vehículos detectados por LPR a alta velocidad en la misma zona
+
+#### Evento 1: Sensor LPR
+
+```json
+{
+  "event_version": "1.0",
+  "event_type": "sensor.lpr",
+  "event_id": "<uuid>",
+  "producer": "test-suite",
+  "source": "simulated",
+  "correlation_id": "<uuid>",
+  "trace_id": "<uuid>",
+  "timestamp": "2025-10-27T12:03:00Z",
+  "partition_key": "sensor.lpr",
+  "geo": {"zone": "zone_4", "lat": 14.65, "lon": -90.55},
+  "severity": "critical",
+  "payload": {"placa_vehicular": "XYZ789", "velocidad_estimada": 90, "modelo_vehiculo": "moto", "color_vehiculo": "blanco", "ubicacion_sensor": "sensor_9"}
+}
+```
+
+#### Evento 2: Sensor LPR (10 segundos después)
+
+```json
+{
+  "event_version": "1.0",
+  "event_type": "sensor.lpr",
+  "event_id": "<uuid>",
+  "producer": "test-suite",
+  "source": "simulated",
+  "correlation_id": "<uuid>",
+  "trace_id": "<uuid>",
+  "timestamp": "2025-10-27T12:03:10Z",
+  "partition_key": "sensor.lpr",
+  "geo": {"zone": "zone_4", "lat": 14.65, "lon": -90.55},
+  "severity": "critical",
+  "payload": {"placa_vehicular": "XYZ790", "velocidad_estimada": 95, "modelo_vehiculo": "moto", "color_vehiculo": "negro", "ubicacion_sensor": "sensor_10"}
+}
+```
+
+#### Evento 3: Sensor LPR (20 segundos después)
+
+```json
+{
+  "event_version": "1.0",
+  "event_type": "sensor.lpr",
+  "event_id": "<uuid>",
+  "producer": "test-suite",
+  "source": "simulated",
+  "correlation_id": "<uuid>",
+  "trace_id": "<uuid>",
+  "timestamp": "2025-10-27T12:03:20Z",
+  "partition_key": "sensor.lpr",
+  "geo": {"zone": "zone_4", "lat": 14.65, "lon": -90.55},
+  "severity": "critical",
+  "payload": {"placa_vehicular": "XYZ791", "velocidad_estimada": 100, "modelo_vehiculo": "moto", "color_vehiculo": "rojo", "ubicacion_sensor": "sensor_11"}
+}
+```
+
+**✅ Resultado Esperado:** Alerta `traffic_speed_violation` en zona `zone_4`
+
+---
 
 ### 📍 Escenario 1: Robo en Zona Comercial
 

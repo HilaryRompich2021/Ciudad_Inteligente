@@ -106,23 +106,9 @@ cd Ciudad_Inteligente
 
 ### Paso 2: Levantar la Infraestructura Base
 
-#### Opción A: Docker Desktop (Windows/Mac)
-
 ```powershell
 cd platform
 docker-compose up -d
-```
-
-#### Opción B: WSL + Docker CE (Linux)
-
-```bash
-cd platform
-
-# 1. Crear red externa (primera vez)
-docker network create ciudad-inteligente-net
-
-# 2. Levantar servicios
-docker-compose -f docker-compose.pruebas.yml up -d
 ```
 
 **Servicios iniciados:**
@@ -138,8 +124,6 @@ docker-compose -f docker-compose.pruebas.yml up -d
 ---
 
 ### Paso 3: Verificar Infraestructura
-
-#### Verificar contenedores corriendo:
 
 ```bash
 docker ps
@@ -164,11 +148,7 @@ Deberías ver:
 #### Verificar Base de Datos:
 
 ```bash
-# Docker Desktop
 docker exec -it postgres psql -U postgres -d ciudades -c "\dt"
-
-# WSL
-docker exec -it platform-postgres-1 psql -U postgres -d ciudades -c "\dt"
 ```
 
 Deberías ver las tablas: `events` y `alerts`
@@ -263,6 +243,38 @@ Accede a: **http://localhost:3000**
 
 ---
 
+### Paso 7: Levantar y Verificar Airflow
+
+1. Ve a la carpeta `platform` y asegúrate de tener el archivo `.env` configurado.
+2. Levanta el servicio de Airflow:
+   ```powershell
+   docker-compose -f docker-compose.airflow.yml up -d
+   ```
+3. Accede a la interfaz web de Airflow en [http://localhost:8082](http://localhost:8082).
+4. Verifica que el DAG `pg_to_es_etl_dag.py` esté presente y activo.
+5. Ejecuta manualmente el DAG para sincronizar datos de PostgreSQL a Elasticsearch, o espera la ejecución automática programada.
+6. Revisa los logs del DAG para confirmar que los datos se indexan correctamente en Elasticsearch.
+
+---
+
+### Paso 8: Levantar y Verificar Elasticsearch
+
+1. Elasticsearch se levanta automáticamente con la infraestructura base (`docker-compose up -d`).
+2. Accede a la API de Elasticsearch para verificar el estado:
+   ```bash
+   curl http://localhost:9200/_cluster/health?pretty
+   ```
+   Deberías ver un estado `green` o `yellow`.
+3. Verifica que los índices `events-*` y `alerts-*` existen y contienen datos:
+   ```bash
+   curl http://localhost:9200/_cat/indices?v
+   curl http://localhost:9200/events-*/_search?size=5
+   curl http://localhost:9200/alerts-*/_search?size=5
+   ```
+4. Puedes usar Kibana (si está desplegado) en [http://localhost:5601](http://localhost:5601) para explorar los datos indexados.
+
+---
+
 ## 🧪 Verificación del Sistema
 
 ### Test 1: Ingestor - Health Check
@@ -289,7 +301,7 @@ curl -X POST http://localhost:8000/events \
     "correlation_id": "f2e3d4c5-0001-4001-8001-100000000001",
     "trace_id": "f3e4d5c6-0001-4001-8001-200000000001",
     "timestamp": "2025-10-01T12:00:00Z",
-    "partition_key": "zone_test",
+    "partition_key": "panic.button",
     "geo": {
       "zone": "zone_test",
       "lat": 14.62,
@@ -396,7 +408,7 @@ curl -X POST http://localhost:8000/events \
 - Los campos **estrictamente obligatorios** (no enriquecibles) son: `event_id` (UUID válido), `event_version`, `event_type`, `producer`, `source`, `geo`, `severity` y `payload`
 - Los UUIDs auto-generados para `trace_id` y `correlation_id` cumplen con el formato UUID v4
 - El timestamp auto-generado usa el formato ISO 8601 (ej: `2025-10-01T12:00:00Z`)
-- El `partition_key` es NOT NULL en la BD, por lo que el enriquecedor lo extrae de `geo.zone` si no lo envías
+- El `partition_key` es NOT NULL en la BD, por lo que el enriquecedor ahora lo extrae del `event_type` si no lo envías explícitamente.
 
 ---
 
@@ -432,9 +444,6 @@ docker exec -it platform-postgres-1 psql -U postgres -d ciudades -c "SELECT even
 #### Evento 1: Botón de Pánico
 
 ```json
-POST http://localhost:8000/events
-Content-Type: application/json
-
 {
   "event_version": "1.0",
   "event_type": "panic.button",
@@ -444,7 +453,7 @@ Content-Type: application/json
   "correlation_id": "e2e3e4e5-0001-4001-8001-100000000001",
   "trace_id": "e3e4e5e6-0001-4001-8001-200000000001",
   "timestamp": "2025-10-01T15:00:00Z",
-  "partition_key": "zone_1",
+  "partition_key": "panic.button",
   "geo": {
     "zone": "zone_1",
     "lat": 14.62,
@@ -463,9 +472,6 @@ Content-Type: application/json
 #### Evento 2: Sensor LPR (1 minuto después)
 
 ```json
-POST http://localhost:8000/events
-Content-Type: application/json
-
 {
   "event_version": "1.0",
   "event_type": "sensor.lpr",
@@ -475,7 +481,7 @@ Content-Type: application/json
   "correlation_id": "e2e3e4e5-0001-4001-8001-100000000001",
   "trace_id": "e3e4e5e6-0002-4002-8002-200000000002",
   "timestamp": "2025-10-01T15:01:00Z",
-  "partition_key": "zone_1",
+  "partition_key": "sensor.lpr",
   "geo": {
     "zone": "zone_1",
     "lat": 14.62,
@@ -535,9 +541,6 @@ docker exec -it platform-postgres-1 psql -U postgres -d ciudades -c "SELECT aler
 #### Evento 1: Reporte Ciudadano
 
 ```json
-POST http://localhost:8000/events
-Content-Type: application/json
-
 {
   "event_version": "1.0",
   "event_type": "citizen.report",
@@ -547,7 +550,7 @@ Content-Type: application/json
   "correlation_id": "e2e3e4e5-0002-4002-8002-100000000002",
   "trace_id": "e3e4e5e6-0003-4003-8003-200000000003",
   "timestamp": "2025-10-01T15:10:00Z",
-  "partition_key": "zone_2",
+  "partition_key": "citizen.report",
   "geo": {
     "zone": "zone_2",
     "lat": 14.63,
@@ -566,9 +569,6 @@ Content-Type: application/json
 #### Evento 2: Sensor Acústico (2 minutos después)
 
 ```json
-POST http://localhost:8000/events
-Content-Type: application/json
-
 {
   "event_version": "1.0",
   "event_type": "sensor.acoustic",
@@ -578,7 +578,7 @@ Content-Type: application/json
   "correlation_id": "e2e3e4e5-0002-4002-8002-100000000002",
   "trace_id": "e3e4e5e6-0004-4004-8004-200000000004",
   "timestamp": "2025-10-01T15:12:00Z",
-  "partition_key": "zone_2",
+  "partition_key": "sensor.acoustic",
   "geo": {
     "zone": "zone_2",
     "lat": 14.63,
@@ -881,3 +881,67 @@ docker network rm ciudad-inteligente-net
 **Última actualización:** 5 de octubre de 2025  
 **Versión del sistema:** 1.0  
 **Curso:** Arquitectura de Computadoras II
+
+---
+
+## 🔄 Flujo de Prueba End-to-End
+
+Esta sección describe cómo probar el flujo completo del sistema, desde el envío de eventos hasta la visualización y verificación en todos los componentes principales.
+
+### 1. Enviar Evento al Ingestor
+- Utiliza Postman, curl o Artillery para enviar un evento al endpoint REST de Ingestor (`/events`).
+- El evento puede ser de tipo `panic.button`, `citizen.report`, `sensor.lpr`, etc.
+- El Ingestor valida, enriquece y publica el evento en Kafka (`events.standardized`).
+
+### 2. Verificar Evento en Kafka
+- Accede a Kafka UI (`http://localhost:8081`).
+- Busca el topic `events.standardized` y verifica que el evento enviado aparece correctamente.
+
+### 3. Procesamiento en Correlator
+- El Correlator consume eventos desde Kafka, aplica reglas de correlación y genera alertas si corresponde.
+- Las alertas se publican en el topic `correlated.alerts` y se persisten en PostgreSQL.
+- Puedes consultar el health y métricas del Correlator en `http://localhost:8080/health` y `http://localhost:8080/metrics`.
+
+### 4. Verificar Alerta en Kafka y PostgreSQL
+- En Kafka UI, revisa el topic `correlated.alerts` para ver las alertas generadas.
+- En PostgreSQL, consulta las tablas `events` y `alerts` para verificar la persistencia:
+  - Usa el comando:
+    ```bash
+    docker exec -it platform-postgres-1 psql -U postgres -d ciudades -c "SELECT * FROM alerts ORDER BY created_at DESC LIMIT 5;"
+    ```
+
+### 5. Sincronización ETL con Airflow
+- Airflow ejecuta el DAG `pg_to_es_etl_dag.py` para sincronizar los datos desde PostgreSQL hacia Elasticsearch.
+- Verifica en la interfaz de Airflow (`http://localhost:8082`) que el DAG se ejecuta correctamente y los datos se indexan en Elasticsearch.
+
+### 6. Visualización en Grafana
+- Accede a Grafana (`http://localhost:3000`).
+- Verifica los dashboards principales:
+  - **Dashboard Principal:** Alertas, eventos, distribución por zona y tipo.
+  - **Mapa de Calor:** Visualización geoespacial y temporal de eventos.
+- Asegúrate de que los datos enviados y procesados aparecen reflejados en los paneles.
+
+### 7. Validación Final
+- Repite el envío de eventos de diferentes tipos y verifica que el ciclo completo se cumple:
+  - Evento → Kafka → Correlator → PostgreSQL → Airflow ETL → Elasticsearch → Grafana
+- Comprueba que los datos y alertas aparecen en todos los componentes y dashboards.
+
+---
+
+## 📝 Consejos para Pruebas
+- Usa UUIDs v4 válidos para los campos `event_id`, `correlation_id`, `trace_id`.
+- Si omites campos opcionales, el Ingestor los enriquece automáticamente.
+- Verifica los logs de cada servicio para identificar errores o problemas de conectividad.
+- Cambia el rango de tiempo en Grafana si tus eventos tienen timestamps antiguos.
+- Consulta los endpoints de health y métricas para asegurar el correcto funcionamiento de los microservicios.
+
+---
+
+## 📚 Recursos y Documentación
+- Consulta los README específicos de cada microservicio para detalles adicionales.
+- Revisa la guía general (`GUÍA_PROYECTO.md`) para entender la arquitectura y el propósito de cada componente.
+- Los dashboards de Grafana están versionados y listos para importar desde la carpeta `platform/grafana/provisioning/dashboards`.
+
+---
+
+**Con este flujo puedes validar el funcionamiento completo del sistema Ciudad Inteligente, desde el ingreso de eventos hasta la visualización y análisis en tiempo real.**

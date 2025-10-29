@@ -1,11 +1,23 @@
-#!/bin/bash
-# Script para crear los topics requeridos en Kafka 
+#!/bin/sh
 
-KAFKA_BROKER="kafka:9092"
+BROKER="kafka:9092"
+TRIES=30
+SLEEP=3
+i=0
 
-# Topics según especificación de la guía (sección 4)
-/opt/bitnami/kafka/bin/kafka-topics.sh --create --if-not-exists --topic events.standardized --bootstrap-server $KAFKA_BROKER --partitions 3 --replication-factor 1 --config retention.ms=259200000
-/opt/bitnami/kafka/bin/kafka-topics.sh --create --if-not-exists --topic correlated.alerts --bootstrap-server $KAFKA_BROKER --partitions 3 --replication-factor 1 --config retention.ms=604800000
+echo "Waiting for Kafka at $BROKER..."
+while ! kafka-topics --bootstrap-server "$BROKER" --list >/dev/null 2>&1; do
+  i=$((i+1))
+  if [ "$i" -ge "$TRIES" ]; then
+    echo "Kafka did not respond after $((TRIES * SLEEP)) seconds" >&2
+    exit 1
+  fi
+  sleep $SLEEP
+done
 
-# Topic opcional para DLQ (Dead Letter Queue)
-#/opt/bitnami/kafka/bin/kafka-topics.sh --create --if-not-exists --topic events.dlq --bootstrap-server $KAFKA_BROKER --partitions 3 --replication-factor 1 --config retention.ms=259200000
+echo "Kafka available — creating topics"
+
+kafka-topics --bootstrap-server "$BROKER" --create --if-not-exists --topic events.standardized --partitions 3 --replication-factor 1 --config retention.ms=259200000
+kafka-topics --bootstrap-server "$BROKER" --create --if-not-exists --topic correlated.alerts --partitions 3 --replication-factor 1 --config retention.ms=604800000
+
+exit 0

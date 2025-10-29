@@ -82,7 +82,7 @@ curl -X POST http://localhost:8000/events \
     "event_id": "e1e2e3e4-0001-4001-8001-000000000001",
     "producer": "test-correlator",
     "source": "simulated",
-    "partition_key": "zone_centro",
+    "partition_key": "panic.button",
     "geo": {
       "zone": "zone_centro",
       "lat": -12.0464,
@@ -107,7 +107,7 @@ curl -X POST http://localhost:8000/events \
     "event_id": "e1e2e3e4-0002-4002-8002-000000000002",
     "producer": "test-correlator",
     "source": "simulated",
-    "partition_key": "zone_centro",
+    "partition_key": "sensor.lpr",
     "geo": {
       "zone": "zone_centro",
       "lat": -12.0465,
@@ -159,7 +159,7 @@ curl -X POST http://localhost:8000/events \
     "event_id": "e1e2e3e4-0003-4003-8003-000000000003",
     "producer": "test-correlator",
     "source": "simulated",
-    "partition_key": "zone_autopista",
+    "partition_key": "citizen.report",
     "geo": {
       "zone": "zone_autopista",
       "lat": -12.0600,
@@ -186,7 +186,7 @@ curl -X POST http://localhost:8000/events \
     "event_id": "e1e2e3e4-0004-4004-8004-000000000004",
     "producer": "test-correlator",
     "source": "simulated",
-    "partition_key": "zone_autopista",
+    "partition_key": "sensor.acoustic",
     "geo": {
       "zone": "zone_autopista",
       "lat": -12.0601,
@@ -289,13 +289,220 @@ El **Event Ingestor** debe estar corriendo para enviar eventos. El Ingestor impl
 
 #### 🔄 Campos Auto-Generados por el Ingestor
 
-| Campo | Si falta | Acción del Ingestor |
-|-------|----------|---------------------|
-| `timestamp` | ❌ | ✅ Se genera timestamp UTC actual |
-| `trace_id` | ❌ | ✅ Se genera UUID v4 aleatorio |
-| `correlation_id` | ❌ | ✅ Se genera UUID v4 aleatorio |
 
-**Esto significa que puedes enviar eventos mínimos sin estos campos opcionales.**
+
+#### 🔄 Tipos de Alertas Generadas
+
+El correlator puede generar las siguientes alertas:
+
+
+| Tipo de alerta              | Eventos requeridos                                                                                                    | Ventana temporal | Condición clave                      |
+|-----------------------------|---------------------------------------------------------------------------------------------------------------------|------------------|--------------------------------------|
+| possible_robbery            | `panic.button` + `sensor.lpr` (velocidad_estimada > 80) en la misma zona                                             | ±2 min           | Ambos eventos en zona y tiempo       |
+| accident                    | `citizen.report` (`tipo_evento = accidente`) + `sensor.acoustic` (`explosion` o `vidrio_roto`) + caída repentina de velocidad en LPR en la misma zona | 5 min            | Ambos eventos y caída de velocidad en zona y tiempo |
+| traffic_speed_violation     | 3 o más eventos `sensor.lpr` (velocidad_estimada > 80) en la misma zona                                              | 2 min            | Mínimo 3 eventos en zona y tiempo    |
+| fire                        | `citizen.report` (`tipo_evento = incendio`) + `sensor.acoustic` (`explosion` o `nivel_decibeles` > 100) en la zona   | 5 min            | Ambos eventos en zona y tiempo       |
+
+---
+
+### Ejemplos de eventos para cada alerta
+
+
+**possible_robbery**
+```json
+{
+  "event_version": "1.0",
+  "event_type": "panic.button",
+  "event_id": "a1b2c3d4-0001-4001-8001-000000000001",
+  "producer": "simulator",
+  "source": "simulated",
+  "correlation_id": "b1c2d3e4-0001-4001-8001-100000000001",
+  "trace_id": "c1d2e3f4-0001-4001-8001-200000000001",
+  "timestamp": "2025-10-27T10:00:00Z",
+  "partition_key": "panic.button",
+  "geo": { "zone": "zone_1", "lat": 14.62, "lon": -90.52 },
+  "severity": "critical",
+  "payload": { "tipo_de_alerta": "panico", "identificador_dispositivo": "BTN-001" }
+}
+```
+```json
+{
+  "event_version": "1.0",
+  "event_type": "sensor.lpr",
+  "event_id": "a1b2c3d4-0002-4002-8002-000000000002",
+  "producer": "simulator",
+  "source": "simulated",
+  "correlation_id": "b1c2d3e4-0002-4002-8002-100000000002",
+  "trace_id": "c1d2e3f4-0002-4002-8002-200000000002",
+  "timestamp": "2025-10-27T10:01:30Z",
+  "partition_key": "sensor.lpr",
+  "geo": { "zone": "zone_1", "lat": 14.62, "lon": -90.52 },
+  "severity": "warning",
+  "payload": { "placa_vehicular": "XYZ123", "velocidad_estimada": 95 }
+}
+```
+
+
+
+**accident**
+```json
+{
+  "event_version": "1.0",
+  "event_type": "citizen.report",
+  "event_id": "a1b2c3d4-0003-4003-8003-000000000003",
+  "producer": "simulator",
+  "source": "simulated",
+  "correlation_id": "b1c2d3e4-0003-4003-8003-100000000003",
+  "trace_id": "c1d2e3f4-0003-4003-8003-200000000003",
+  "timestamp": "2025-10-27T11:00:00Z",
+  "partition_key": "citizen.report",
+  "geo": { "zone": "zone_2", "lat": 14.63, "lon": -90.53 },
+  "severity": "warning",
+  "payload": { "tipo_evento": "accidente", "mensaje_descriptivo": "colisión múltiple" }
+}
+```
+```json
+{
+  "event_version": "1.0",
+  "event_type": "sensor.acoustic",
+  "event_id": "a1b2c3d4-0004-4004-8004-000000000004",
+  "producer": "simulator",
+  "source": "simulated",
+  "correlation_id": "b1c2d3e4-0004-4004-8004-100000000004",
+  "trace_id": "c1d2e3f4-0004-4004-8004-200000000004",
+  "timestamp": "2025-10-27T11:04:00Z",
+  "partition_key": "sensor.acoustic",
+  "geo": { "zone": "zone_2", "lat": 14.63, "lon": -90.53 },
+  "severity": "critical",
+  "payload": { "tipo_sonido_detectado": "explosion", "nivel_decibeles": 120 }
+}
+```
+```json
+{
+  "event_version": "1.0",
+  "event_type": "sensor.lpr",
+  "event_id": "a1b2c3d4-0010-4010-8010-000000000010",
+  "producer": "simulator",
+  "source": "simulated",
+  "correlation_id": "b1c2d3e4-0010-4010-8010-100000000010",
+  "trace_id": "c1d2e3f4-0010-4010-8010-200000000010",
+  "timestamp": "2025-10-27T11:02:00Z",
+  "partition_key": "sensor.lpr",
+  "geo": { "zone": "zone_2", "lat": 14.63, "lon": -90.53 },
+  "severity": "warning",
+  "payload": { "placa_vehicular": "XYZ123", "velocidad_estimada": 100 }
+}
+```
+```json
+{
+  "event_version": "1.0",
+  "event_type": "sensor.lpr",
+  "event_id": "a1b2c3d4-0011-4011-8011-000000000011",
+  "producer": "simulator",
+  "source": "simulated",
+  "correlation_id": "b1c2d3e4-0011-4011-8011-100000000011",
+  "trace_id": "c1d2e3f4-0011-4011-8011-200000000011",
+  "timestamp": "2025-10-27T11:03:00Z",
+  "partition_key": "sensor.lpr",
+  "geo": { "zone": "zone_2", "lat": 14.63, "lon": -90.53 },
+  "severity": "warning",
+  "payload": { "placa_vehicular": "XYZ123", "velocidad_estimada": 30 }
+}
+```
+
+
+**traffic_speed_violation**
+```json
+{
+  "event_version": "1.0",
+  "event_type": "sensor.lpr",
+  "event_id": "a1b2c3d4-0005-4005-8005-000000000005",
+  "producer": "simulator",
+  "source": "simulated",
+  "correlation_id": "b1c2d3e4-0005-4005-8005-100000000005",
+  "trace_id": "c1d2e3f4-0005-4005-8005-200000000005",
+  "timestamp": "2025-10-27T12:00:00Z",
+  "partition_key": "sensor.lpr",
+  "geo": { "zone": "zone_3", "lat": 14.64, "lon": -90.54 },
+  "severity": "warning",
+  "payload": { "placa_vehicular": "ABC123", "velocidad_estimada": 100 }
+}
+```
+```json
+{
+  "event_version": "1.0",
+  "event_type": "sensor.lpr",
+  "event_id": "a1b2c3d4-0006-4006-8006-000000000006",
+  "producer": "simulator",
+  "source": "simulated",
+  "correlation_id": "b1c2d3e4-0006-4006-8006-100000000006",
+  "trace_id": "c1d2e3f4-0006-4006-8006-200000000006",
+  "timestamp": "2025-10-27T12:01:00Z",
+  "partition_key": "sensor.lpr",
+  "geo": { "zone": "zone_3", "lat": 14.64, "lon": -90.54 },
+  "severity": "warning",
+  "payload": { "placa_vehicular": "DEF456", "velocidad_estimada": 105 }
+}
+```
+```json
+{
+  "event_version": "1.0",
+  "event_type": "sensor.lpr",
+  "event_id": "a1b2c3d4-0007-4007-8007-000000000007",
+  "producer": "simulator",
+  "source": "simulated",
+  "correlation_id": "b1c2d3e4-0007-4007-8007-100000000007",
+  "trace_id": "c1d2e3f4-0007-4007-8007-200000000007",
+  "timestamp": "2025-10-27T12:01:30Z",
+  "partition_key": "sensor.lpr",
+  "geo": { "zone": "zone_3", "lat": 14.64, "lon": -90.54 },
+  "severity": "warning",
+  "payload": { "placa_vehicular": "GHI789", "velocidad_estimada": 110 }
+}
+```
+
+
+**fire**
+```json
+{
+  "event_version": "1.0",
+  "event_type": "citizen.report",
+  "event_id": "a1b2c3d4-0008-4008-8008-000000000008",
+  "producer": "simulator",
+  "source": "simulated",
+  "correlation_id": "b1c2d3e4-0008-4008-8008-100000000008",
+  "trace_id": "c1d2e3f4-0008-4008-8008-200000000008",
+  "timestamp": "2025-10-27T13:00:00Z",
+  "partition_key": "citizen.report",
+  "geo": { "zone": "zone_4", "lat": 14.65, "lon": -90.55 },
+  "severity": "critical",
+  "payload": { "tipo_evento": "incendio", "mensaje_descriptivo": "fuego en edificio" }
+}
+```
+```json
+{
+  "event_version": "1.0",
+  "event_type": "sensor.acoustic",
+  "event_id": "a1b2c3d4-0009-4009-8009-000000000009",
+  "producer": "simulator",
+  "source": "simulated",
+  "correlation_id": "b1c2d3e4-0009-4009-8009-100000000009",
+  "trace_id": "c1d2e3f4-0009-4009-8009-200000000009",
+  "timestamp": "2025-10-27T13:04:00Z",
+  "partition_key": "sensor.acoustic",
+  "geo": { "zone": "zone_4", "lat": 14.65, "lon": -90.55 },
+  "severity": "critical",
+  "payload": { "tipo_sonido_detectado": "explosion", "nivel_decibeles": 130 }
+}
+```
+
+> ⚠️ **Importante:** El correlator espera eventos ya enriquecidos por el ingestor. Los campos `timestamp`, `trace_id`, `correlation_id` y `partition_key` deben estar presentes y ser válidos.
+
+**UUIDs:** Los campos `event_id`, `correlation_id` y `trace_id` deben ser UUID v4 válidos. Si no lo son, el evento será rechazado.
+
+**partition_key:** Debe estar presente y normalmente igual al `event_type`.
+
+**Idempotencia:** El correlator rechaza eventos duplicados (`event_id` repetido) por 10 minutos.
 
 ---
 
@@ -316,7 +523,7 @@ curl -X POST http://localhost:8000/events \
     "correlation_id": "b1c2d3e4-0001-4001-8001-100000000001",
     "trace_id": "c1d2e3f4-0001-4001-8001-200000000001",
     "timestamp": "2025-10-01T10:00:00Z",
-    "partition_key": "zone_centro",
+    "partition_key": "panic.button",
     "geo": {
       "zone": "zone_centro",
       "lat": -12.0464,
@@ -340,7 +547,7 @@ curl -X POST http://localhost:8000/events \
     "event_id": "a1b2c3d4-0001-4001-8001-000000000001",
     "producer": "test-suite",
     "source": "simulated",
-    "partition_key": "zone_centro",
+    "partition_key": "panic.button",
     "geo": {
       "zone": "zone_centro",
       "lat": -12.0464,
@@ -378,24 +585,18 @@ docker logs correlator | Select-String "Alert generated"
 
 ## 📊 Endpoints de Monitoreo
 
-### Health Check
+## 📊 Endpoints REST Disponibles
 
-```bash
-curl http://localhost:8080/health
-```
-
-**Respuesta esperada:**
+### 1. Health Check
+`GET /health`
+**Respuesta:**
 ```
 OK
 ```
 
-### Métricas de la Aplicación
-
-```bash
-curl http://localhost:8080/metrics
-```
-
-**Respuesta esperada:**
+### 2. Métricas de la Aplicación
+`GET /metrics`
+**Respuesta:**
 ```json
 {
   "alerts": 0,
@@ -403,20 +604,20 @@ curl http://localhost:8080/metrics
 }
 ```
 
-### Consultar Alertas Activas
+### 3. Consultar Alertas Activas (Redis)
+`GET /alerts/active?zone=<nombre_zona>`
+**Respuesta:** Array de alertas correlacionadas activas en esa zona (TTL 10 min)
 
-```bash
-# Por zona específica
-curl "http://localhost:8080/alerts/active?zone=zone_1"
-```
-
-**Respuesta:** Array de alertas correlacionadas activas en esa zona
-
----
+### 4. Consultar Alertas Persistidas (PostgreSQL)
+`GET /alerts/db?zone=<nombre_zona>`
+**Respuesta:** Array de alertas persistidas en la base de datos. Si no se especifica zona, retorna todas.
 
 ## 🔧 Configuración
 
+
 ### Variables de Entorno
+
+> ⚠️ **Seguridad:** Nunca subas el archivo `.env` con credenciales reales al repositorio. Usa `.env.example` como plantilla segura.
 
 | Variable | Descripción | Valor por Defecto |
 |----------|-------------|-------------------|
@@ -426,6 +627,7 @@ curl "http://localhost:8080/alerts/active?zone=zone_1"
 | `SPRING_DATASOURCE_URL` | URL de PostgreSQL | `jdbc:postgresql://host.docker.internal:5432/ciudades` |
 | `SPRING_DATASOURCE_USERNAME` | Usuario de BD | `postgres` |
 | `SPRING_DATASOURCE_PASSWORD` | Contraseña de BD | `postgres` |
+| `KAFKA_TOPIC_CORRELATED_ALERTS` | Topic de alertas correlacionadas | `correlated.alerts` |
 
 ### Configuración de Correlación
 
@@ -576,5 +778,12 @@ Para problemas o preguntas:
 ---
 
 ## 📄 Licencia
+---
+
+## 🚀 Próximos Pasos / Integraciones Futuras
+
+- Integración con Elastic para indexar alertas y búsquedas avanzadas.
+- Mejorar métricas expuestas en `/metrics`.
+- Documentar nuevos endpoints si se agregan.
 
 Este proyecto es parte del curso de Arquitectura de Computadoras II.
