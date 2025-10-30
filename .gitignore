@@ -45,7 +45,9 @@ docker-volumes/
 */**/.env
 
 # Archivos generados en Analytics
-Analytics/dags/__pycache__/
-Analytics/airflow_data/*.bak
-Analytics/airflow_data/*.pid
-Analytics/airflow_data/logs/
+analytics/dags/__pycache__/
+analytics/airflow_data/*.bak
+analytics/airflow_data/*.pid
+analytics/airflow_data/logs/
+analytics/airflow_data/airflow.db
+airflow_data/airflow.cfg

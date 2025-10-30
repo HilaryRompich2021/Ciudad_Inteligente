@@ -39,6 +39,14 @@ Esta carpeta contiene utilidades para simular eventos, probar reglas de correlac
 ## Índice de scripts
 
 
+
+### 0. Creación de la red Docker externa
+- **create-platform-network.sh**: Crea la red Docker externa `platform_default` necesaria para que todos los servicios puedan comunicarse entre sí. Debe ejecutarse antes de levantar los servicios por primera vez:
+    ```bash
+    cd scripts
+    sh create-platform-network.sh
+    ```
+
 ### 1. Creación y verificación de tópicos Kafka
 - **create-topics.sh**: Espera a que Kafka esté disponible y crea los tópicos principales (`events.standardized`, `correlated.alerts`) con configuración de retención y particiones.
   - **Nota:** Este script normalmente es ejecutado automáticamente por Docker Compose. Solo es necesario usarlo manualmente si los tópicos no se han creado correctamente.

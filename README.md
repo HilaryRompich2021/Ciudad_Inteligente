@@ -25,6 +25,7 @@ Cada componente está desacoplado y se comunica por eventos, permitiendo escalab
 - `docs/`: Documentación técnica, ejemplos de eventos y guías de uso.
 - `mops/`: Documentación y guías de operación y monitoreo.
 
+
 ## 4. Guía de Onboarding
 1. Copia los archivos `.env.example` y completa tus credenciales:
 	```bash
@@ -33,11 +34,16 @@ Cada componente está desacoplado y se comunica por eventos, permitiendo escalab
 	cp analytics/airflow/.env.example analytics/airflow/.env
 	# Edita cada archivo .env con tus credenciales
 	```
-2. Levanta los servicios:
+2. **Crea la red Docker externa antes de levantar los servicios (solo la primera vez):**
+	```bash
+	cd scripts
+	sh create-platform-network.sh
+	```
+3. Levanta los servicios:
 	```bash
 	make -f platform/Makefile up
 	```
-3. Accede a los servicios principales:
+4. Accede a los servicios principales:
 	- **Kafka-UI:** [http://localhost:8081](http://localhost:8081)
 	- **Grafana:** [http://localhost:3000](http://localhost:3000)
 	- **Airflow:** [http://localhost:8082](http://localhost:8082)
