@@ -1,0 +1,7 @@
+# Configuración básica de Elasticsearch para desarrollo local
+xpack.security.enabled: false
+xpack.security.enrollment.enabled: false
+xpack.security.http.ssl:
+  enabled: false
+# Puedes agregar más configuraciones aquí si lo necesitas
+network.host: 0.0.0.0

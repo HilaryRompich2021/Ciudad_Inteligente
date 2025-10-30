@@ -1,50 +1,134 @@
 {
-  "annotations": { "list": [] },
-  "editable": true,
-  "gnetId": null,
-  "graphTooltip": 0,
-  "id": null,
-  "links": [],
-  "panels": [
-    {
-      "datasource": "Elasticsearch-Ciudades",
-      "type": "table",
-      "title": "Evidencia de Alerta",
-      "targets": [
-        {
-          "refId": "A",
-          "query": "alert_id: $alert_id",
-          "alias": "Evidencia",
-          "datasource": "Elasticsearch-Ciudades"
-        }
-      ],
-      "fieldConfig": { "defaults": {}, "overrides": [] },
-      "options": { "showHeader": true },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 0 },
-      "id": 1
-    }
-  ],
-  "refresh": "5s",
-  "schemaVersion": 37,
-  "style": "dark",
-  "tags": ["evidencia", "alertas"],
-  "templating": {
+  "annotations": {
     "list": [
       {
-        "name": "alert_id",
-        "type": "query",
-        "datasource": "Elasticsearch-Ciudades",
-        "query": "alert_id.keyword",
-        "refresh": 1,
-        "multi": false,
-        "includeAll": false,
-        "options": [],
-        "current": { "text": "", "value": "" }
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
       }
     ]
   },
-  "time": { "from": "now-1h", "to": "now" },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 3,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "uid": "PB6245F14C981C069"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "footer": {
+              "reducers": []
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "pluginVersion": "12.2.1",
+      "targets": [
+        {
+          "dataset": "postgres",
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT e.*\r\nFROM events e\r\nJOIN alerts a\r\n  ON e.event_id IN (\r\n    SELECT value::uuid\r\n    FROM jsonb_array_elements_text(a.evidence) AS arr(value)\r\n  )\r\nWHERE a.alert_id = '$alert_id';",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Evidencia de Alerta",
+      "type": "table"
+    }
+  ],
+  "preload": false,
+  "refresh": "5s",
+  "schemaVersion": 42,
+  "tags": [
+    "evidencia",
+    "alertas"
+  ],
+  "templating": {
+    "list": [
+      {
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "definition": "SELECT alert_id FROM alerts ORDER BY created_at DESC",
+        "description": "",
+        "name": "alert_id",
+        "options": [],
+        "query": "SELECT alert_id FROM alerts ORDER BY created_at DESC",
+        "refresh": 1,
+        "regex": "",
+        "type": "query"
+      }
+    ]
+  },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
   "timezone": "browser",
   "title": "Desglose de Evidencia de Alerta",
+  "uid": "945866bc-e6b4-480a-86f3-5b791492d5d4",
   "version": 1
 }

@@ -14,16 +14,20 @@ Deberías ver una respuesta JSON con información de la instancia.
 
 ---
 
-## 2. Aplica los templates de índices
 
-Puedes aplicar los templates manualmente usando curl o Postman:
+## 2. Aplica los templates de índices (¡Obligatorio antes de indexar datos!)
 
-```bash
+Antes de insertar o sincronizar datos en Elasticsearch, asegúrate de aplicar los templates de índices. Esto garantiza que los campos y tipos estén correctamente definidos y evita problemas de mapeo.
+
+Puedes aplicar los templates manualmente usando curl, PowerShell o Postman:
+
+
+```powershell
 # Events
-curl -X PUT "http://localhost:9200/_index_template/events_template" -H 'Content-Type: application/json' --data-binary @templates/events_template.json
+Invoke-WebRequest -Uri "http://localhost:9200/_index_template/events_template" -Method Put -Headers @{"Content-Type"="application/json"} -InFile "elasticsearch/templates/events_template.json"
 
 # Alerts
-curl -X PUT "http://localhost:9200/_index_template/alerts_template" -H 'Content-Type: application/json' --data-binary @templates/alerts_template.json
+Invoke-WebRequest -Uri "http://localhost:9200/_index_template/alerts_template" -Method Put -Headers @{"Content-Type"="application/json"} -InFile "elasticsearch/templates/alerts_template.json"
 ```
 
 ---
@@ -31,29 +35,86 @@ curl -X PUT "http://localhost:9200/_index_template/alerts_template" -H 'Content-
 ## 3. Verifica los templates
 
 ```bash
-curl -X GET "http://localhost:9200/_index_template/events_template?pretty"
-curl -X GET "http://localhost:9200/_index_template/alerts_template?pretty"
+Invoke-WebRequest -Uri "http://localhost:9200/_index_template/events_template"
+Invoke-WebRequest -Uri "http://localhost:9200/_index_template/alerts_template"
 ```
 
 ---
 
 ## 4. Consulta los datos indexados
 
-Para ver los eventos y alertas indexados:
 
-```bash
+### Consulta rápida en PowerShell
+
+Para ver los eventos y alertas indexados desde PowerShell, usa:
+
+```powershell
 # Eventos
-curl -X GET "http://localhost:9200/events-*/_search?pretty&size=10"
+(Invoke-WebRequest -Uri "http://localhost:9200/events-*/_search?pretty&size=5" -Method Get).Content
 
 # Alertas
-curl -X GET "http://localhost:9200/alerts-*/_search?pretty&size=10"
+(Invoke-WebRequest -Uri "http://localhost:9200/alerts-*/_search?pretty&size=5" -Method Get).Content
 ```
+
+Esto mostrará los documentos indexados directamente en la consola.
 
 ---
 
-## 5. Prueba desde Kibana o Grafana
 
-- Accede a Kibana: `http://localhost:5601` (si está disponible)
+
+## 5. Prueba y visualización en Kibana
+
+1. Accede a Kibana: `http://localhost:5601`
+2. Crea los data views `events-*` y `alerts-*` como se indica arriba.
+3. Ve a **Discover** y selecciona el data view que quieras explorar.
+4. Ajusta el rango de tiempo en la parte superior derecha para ver los datos recientes.
+5. Usa el buscador para filtrar por campos, por ejemplo:
+	- `event_type: "sensor.lpr"` (solo eventos de tipo sensor.lpr)
+	- `zone: "zone_4"` (solo eventos/alertas de la zona 4)
+	- `score > 0.8` (solo alertas con score alto)
+6. Haz clic en los campos de la izquierda para agregarlos a la tabla de resultados.
+7. Puedes exportar los resultados o tomar capturas de pantalla para tu evidencia.
+
+
+**Ejemplo de búsqueda en Discover para eventos:**
+
+```
+
+
+# Eventos de tipo panic.button y alerta de pánico en el payload
+event_type: "panic.button" AND payload.tipo_de_alerta: "panico"
+
+# Eventos críticos de tipo sensor.lpr
+event_type: "sensor.lpr" AND severity: "critical"
+
+# Eventos con latitud y longitud específicas
+geo.lat: 14.63 AND geo.lon: -90.53
+`
+```
+
+**Ejemplos de búsqueda en Discover para alertas:**
+```
+# 1. Todas las alertas de la zona 1
+zone: "zone_1"
+
+# 2. Alertas de tipo posible robo con score alto
+type: "possible_robbery" AND score > 0.8
+
+# 3. Alertas generadas en el último minuto
+created_at > now-1m
+```
+
+**Visualización básica:**
+- El histograma superior muestra la cantidad de documentos por intervalo de tiempo.
+- La tabla inferior muestra los documentos y sus campos.
+
+**Opcional:**
+- Crea dashboards y visualizaciones (mapas, tablas, gráficos) usando los data views para mostrar métricas, mapas de calor, cronologías, etc.
+
+---
+
+## 5b. Prueba desde Grafana
+
 - Accede a Grafana: `http://localhost:3000`
 - Realiza búsquedas o visualizaciones usando los índices `events-*` y `alerts-*`
 
