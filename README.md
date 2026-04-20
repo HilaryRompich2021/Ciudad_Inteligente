@@ -5,6 +5,19 @@
 
 Este repo contiene el **esqueleto de infraestructura** para que el equipo trabaje en paralelo y tú puedas integrar rápidamente.
 
+---
+**Guía para probar el microservicio ingestor (procesamiento de eventos) con un Kafka externo al del proyecto principal**
+
+El microservicio `ingestor` es el encargado de recibir, validar y publicar eventos en formato canónico hacia Kafka.
+
+Existen guías específicas para levantar y probar solo este microservicio, ya sea de forma local o usando Docker:
+
+- [`src/ingestor/README.md`](src/ingestor/README.md): Para pruebas locales (Java/Maven) conectando a cualquier Kafka externo.
+- [`src/ingestor/README_PRUEBAS_INGESTOR.md`](src/ingestor/README_PRUEBAS_INGESTOR.md): Para pruebas usando Docker y variables de entorno.
+
+Ambas guías incluyen ejemplos de endpoints y payloads válidos según el esquema canónico.
+---
+
 ## Estructura
 ```
 platform/                # Docker Compose + .env
